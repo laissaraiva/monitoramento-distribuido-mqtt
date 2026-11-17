@@ -120,3 +120,63 @@ Para suportar tanto clientes simples (como testes manuais via `mosquitto_pub`) q
 | `cpu` | `"%"` | `0.0 <= valor <= 100.0` | `valor`, `unidade`, `timestamp`, `detalhes` (opc.) | `por_nucleo` (opc.) |
 | `memoria` | `"MB"` | `valor >= 0` (e `<= total`) | `valor`, `unidade`, `timestamp`, `detalhes` (opc.) | `total`, `livre`, `percentual` (opcs.) |
 
+---
+
+## 5. Exemplos de mensagens válidas
+
+### 5.1. CPU — formato mínimo (compatível com testes CLI)
+
+**Tópico:** `monitoramento/maquina01/cpu`
+
+```json
+{
+  "valor": 25.5,
+  "unidade": "%",
+  "timestamp": "2026-11-16T22:00:00-03:00"
+}
+```
+
+### 5.2. CPU — formato estendido (com uso por núcleo lógico)
+
+**Tópico:** `monitoramento/pc-lab-02/cpu`
+
+```json
+{
+  "valor": 32.4,
+  "unidade": "%",
+  "timestamp": "2026-11-16T22:00:05-03:00",
+  "detalhes": {
+    "por_nucleo": [28.0, 35.2, 31.4, 35.0]
+  }
+}
+```
+
+### 5.3. Memória RAM — formato mínimo (compatível com testes CLI)
+
+**Tópico:** `monitoramento/maquina01/memoria`
+
+```json
+{
+  "valor": 8192,
+  "unidade": "MB",
+  "timestamp": "2026-11-16T22:00:00-03:00"
+}
+```
+
+### 5.4. Memória RAM — formato estendido (com total, livre e percentual)
+
+**Tópico:** `monitoramento/ubuntu_node_1/memoria`
+
+```json
+{
+  "valor": 6144.5,
+  "unidade": "MB",
+  "timestamp": "2026-11-17T01:00:10Z",
+  "detalhes": {
+    "total": 16384.0,
+    "livre": 10239.5,
+    "percentual": 37.5
+  }
+}
+```
+
