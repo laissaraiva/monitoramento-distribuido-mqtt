@@ -59,3 +59,21 @@ Expressão regular canônica:
 ^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}[a-zA-Z0-9]$
 ```
 
+### 3.2. Exemplos de `id_maquina`
+
+| Identificador | Status | Motivo |
+|---|---|---|
+| `maquina01` | Válido | Alfanumérico, 9 caracteres |
+| `pc-lab-02` | Válido | Letras, dígitos e hífens internos |
+| `ubuntu_node_1` | Válido | Letras, dígitos e sublinhados internos |
+| `m1` | Válido | Comprimento mínimo (2 caracteres alfanuméricos) |
+| `""` (vazio) | Inválido | String vazia |
+| `a` | Inválido | Comprimento inferior a 2 caracteres |
+| `maquina/01` | Inválido | Contém separador de nível MQTT (`/`) |
+| `maquina+1` | Inválido | Contém wildcard MQTT (`+`) |
+| `#` | Inválido | Contém wildcard MQTT (`#`) |
+| `maquina 01` | Inválido | Contém espaço em branco |
+| `-maquina01` | Inválido | Inicia com hífen (deve iniciar com alfanumérico) |
+
+---
+
