@@ -486,3 +486,89 @@ def validar_payload_memoria(payload: Any) -> ResultadoValidacao:
         dados=base.dados,
     )
 
+
+# VALIDADOR UNIFICADO DE MENSAGENS MQTT (ENTRY POINT PARA PUBLISHER E SUBSCRIBER)
+def validar_mensagem_mqtt(
+    topico: str,
+    payload_bruto: Union[str, bytes, Dict[str, Any]],
+    lancar_excecao: bool = False,
+) -> ResultadoValidacao:
+    # Valida uma mensagem MQTT completa (tópico + payload) de ponta a ponta
+
+    # Função principal de integração:
+    # - No Monitor Central (server/subscriber.py), pode ser chamada diretamente no callback on_message passando msg.topic e msg.payload (bytes)
+    # - No Agente (agent/publisher.py), pode ser chamada antes do publish() com lancar_excecao=True ou verificando .valido
+
+    # Parâmetros:
+    # - topico: string do tópico MQTT (ex.: "monitoramento/maquina01/cpu")
+    # - payload_bruto: bytes (UTF-8), str JSON ou dict já desserializado
+    # - lancar_excecao: se True, lança ErroValidacaoProtocolo quando inválido
+
+    resultado_topico = validar_topico(topico)
+    if not resultado_topico.valido:
+        if lancar_excecao:
+            raise ErroValidacaoProtocolo(resultado_topico.erro)
+        return resultado_topico
+
+    id_maquina = resultado_topico.dados["id_maquina"]
+    metrica = resultado_topico.dados["metrica"]
+
+    # Decodificação UTF-8 (quando recebido como bytes do Paho MQTT)
+    if isinstance(payload_bruto, bytes):
+        try:
+            texto_json = payload_bruto.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            erro = f"Payload não é uma sequência UTF-8 válida: {exc}."
+            if lancar_excecao:
+                raise ErroValidacaoProtocolo(erro) from exc
+            return ResultadoValidacao(valido=False, erro=erro)
+    elif isinstance(payload_bruto, str):
+        texto_json = payload_bruto
+    elif isinstance(payload_bruto, dict):
+        texto_json = None
+    else:
+        erro = (
+            "Tipo de payload não suportado para validação: "
+            f"esperado bytes, str ou dict, recebido {type(payload_bruto).__name__}."
+        )
+        if lancar_excecao:
+            raise ErroValidacaoProtocolo(erro)
+        return ResultadoValidacao(valido=False, erro=erro)
+
+    # Desserialização JSON (quando recebido como bytes ou str)
+    if texto_json is not None:
+        try:
+            payload_dict = json.loads(
+                texto_json,
+                parse_constant=_rejeitar_constante_json,
+            )
+        except (json.JSONDecodeError, ValueError) as exc:
+            erro = f"JSON malformado ou inválido: {exc}."
+            if lancar_excecao:
+                raise ErroValidacaoProtocolo(erro) from exc
+            return ResultadoValidacao(valido=False, erro=erro)
+    else:
+        payload_dict = payload_bruto
+
+    # Validação semântica de acordo com a métrica extraída do tópico
+    if metrica == "cpu":
+        resultado_payload = validar_payload_cpu(payload_dict)
+    else:
+        resultado_payload = validar_payload_memoria(payload_dict)
+
+    if not resultado_payload.valido:
+        if lancar_excecao:
+            raise ErroValidacaoProtocolo(resultado_payload.erro)
+        return resultado_payload
+
+    return ResultadoValidacao(
+        valido=True,
+        dados={
+            "topico": topico,
+            "id_maquina": id_maquina,
+            "metrica": metrica,
+            "payload": resultado_payload.dados["payload"],
+            "datetime": resultado_payload.dados["datetime"],
+        },
+    )
+
