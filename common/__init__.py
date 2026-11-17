@@ -10,6 +10,9 @@ from common.validation import (
     UNIDADES_POR_METRICA,
     ResultadoValidacao,
     validar_id_maquina,
+    validar_mensagem_mqtt,
+    validar_payload_cpu,
+    validar_payload_memoria,
     validar_timestamp,
     validar_topico,
 )
@@ -21,6 +24,9 @@ __all__ = [
     "UNIDADES_POR_METRICA",
     "ResultadoValidacao",
     "validar_id_maquina",
+    "validar_mensagem_mqtt",
+    "validar_payload_cpu",
+    "validar_payload_memoria",
     "validar_timestamp",
     "validar_topico",
 ]
