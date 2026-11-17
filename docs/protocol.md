@@ -41,3 +41,21 @@ Tópicos válidos:
 
 ---
 
+## 3. Regras para o identificador da máquina (`id_maquina`)
+
+O campo `<id_maquina>` é extraído do segundo nível do tópico MQTT e identifica a origem dos dados na estrutura em memória do monitor central.
+
+### 3.1. Restrições sintáticas
+
+1. **Tipo:** string (`str`) não vazia;
+2. **Comprimento:** mínimo de **2** e máximo de **64** caracteres;
+3. **Caracteres permitidos:** apenas letras ASCII sem acento (`a-z`, `A-Z`), dígitos (`0-9`), hífen (`-`) e sublinhado (`_`);
+4. **Início e fim:** deve começar e terminar obrigatoriamente com caractere alfanumérico (`a-z`, `A-Z`, `0-9`);
+5. **Caracteres proibidos:** espaços em branco, acentos, barras (`/`), curingas MQTT (`+`, `#`) e caracteres de controle.
+
+Expressão regular canônica:
+
+```regex
+^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}[a-zA-Z0-9]$
+```
+
