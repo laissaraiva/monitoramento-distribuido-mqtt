@@ -35,9 +35,9 @@ class ErroValidacaoProtocolo(ValueError):
 class ResultadoValidacao:
     # Desfecho de qualquer operação de validação
 
-    # Por que usar um objeto de resultado em vez de apenas retornar `bool`?
+    # Por que usar um objeto de resultado em vez de apenas retornar bool?
     # - Permite que o subscriber registre o motivo exato da rejeição no log sem precisar capturar exceções a cada pacote recebido
-    # - Transporta em `dados` os valores já extraídos e normalizados (ex: `id_maquina`, `metrica`, `datetime` convertido), evitando reprocessamento
+    # - Transporta em dados os valores já extraídos e normalizados (ex: id_maquina, metrica, datetime convertido), evitando reprocessamento
     
     valido: bool
     erro: Optional[str] = None
@@ -46,28 +46,28 @@ class ResultadoValidacao:
 
 # FUNÇÕES AUXILIARES INTERNAS
 def _eh_numero_valido(valor: Any) -> bool:
-    # Verifica se `valor` é um número finito (`int` ou `float`)    
-    if isinstance(valor, bool): # Em Python a classe `bool` herda de `int` (`issubclass(bool, int) == True`)
-        return False            # `isinstance(True, int)` retorna `True`! se não bloquar `bool`
+    # Verifica se valor é um número finito (int ou float)    
+    if isinstance(valor, bool): # Em Python a classe bool herda de int (issubclass(bool, int) == True)
+        return False            # isinstance(True, int) retorna True! se não bloquar bool
     if not isinstance(valor, (int, float)):
         return False
-    if math.isnan(valor) or math.isinf(valor): # bloqueia `NaN` e `Infinity` - aceitos pelo parser JSON padrão do Python, mas são inválidos na especificação JSON (RFC 8259)
+    if math.isnan(valor) or math.isinf(valor): # bloqueia NaN e Infinity - aceitos pelo parser JSON padrão do Python, mas são inválidos na especificação JSON (RFC 8259)
         return False
     return True
 
 
 # VALIDADORES DE IDENTIFICADOR, TÓPICO E TIMESTAMP
 def validar_id_maquina(id_maquina: Any) -> ResultadoValidacao:
-    # Valida o identificador de uma máquina monitorada (`id_maquina`)
+    # Valida o identificador de uma máquina monitorada (id_maquina)
 
-    # Deve ser string (`str`) não vazia;
+    # Deve ser string (str) não vazia;
     if not isinstance(id_maquina, str): 
         return ResultadoValidacao(
             valido=False,
             erro=f"id_maquina deve ser string, mas recebeu {type(id_maquina).__name__}.",
         )
 
-    # Não pode conter curingas MQTT (`+`, `#`), separador (`/`) ou espaços;
+    # Não pode conter curingas MQTT (+, #), separador (/) ou espaços;
     if not id_maquina:
         return ResultadoValidacao(
             valido=False,
@@ -110,7 +110,7 @@ def validar_id_maquina(id_maquina: Any) -> ResultadoValidacao:
 def validar_topico(topico: Any) -> ResultadoValidacao:
     # Valida um tópico concreto de publicação MQTT e extrai seus componentes
 
-    # Formato esperado: `monitoramento/<id_maquina>/<metrica>`
+    # Formato esperado: monitoramento/<id_maquina>/<metrica>
     
     if not isinstance(topico, str) or not topico:
         return ResultadoValidacao(
@@ -121,7 +121,7 @@ def validar_topico(topico: Any) -> ResultadoValidacao:
     if "+" in topico or "#" in topico:
         return ResultadoValidacao(
             valido=False,
-            erro=f"Tópico publicado '{topico}' não pode conter wildcards MQTT ('+' ou '#').", # são válidos apenas em filtros de assinatura (`SUBSCRIBE`)
+            erro=f"Tópico publicado '{topico}' não pode conter wildcards MQTT ('+' ou '#').", # são válidos apenas em filtros de assinatura (SUBSCRIBE)
         )
 
     partes = topico.split("/")
@@ -171,7 +171,7 @@ def validar_topico(topico: Any) -> ResultadoValidacao:
 
 
 def validar_timestamp(timestamp: Any) -> ResultadoValidacao:
-    # Valida se `timestamp` é uma string ISO 8601 completa com fuso horário
+    # Valida se timestamp é uma string ISO 8601 completa com fuso horário
 
     # Exemplos aceitos:
     # - "2026-11-16T22:00:00-03:00"
