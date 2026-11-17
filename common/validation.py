@@ -572,3 +572,39 @@ def validar_mensagem_mqtt(
         },
     )
 
+
+# DEMONSTRAÇÃO NO TERMINAL (python3 -m common.validation)
+if __name__ == "__main__":
+    exemplos = [
+        (
+            "CPU válido (formato mínimo)",
+            "monitoramento/maquina01/cpu",
+            b'{"valor": 25.5, "unidade": "%", "timestamp": "2026-11-16T22:00:00-03:00"}',
+        ),
+        (
+            "RAM válida (formato estendido)",
+            "monitoramento/ubuntu_node_1/memoria",
+            {
+                "valor": 6144.5,
+                "unidade": "MB",
+                "timestamp": "2026-11-17T01:00:10Z",
+                "detalhes": {"total": 16384.0, "livre": 10239.5, "percentual": 37.5},
+            },
+        ),
+        (
+            "CPU inválida (valor acima de 100%)",
+            "monitoramento/maquina01/cpu",
+            '{"valor": 112.5, "unidade": "%", "timestamp": "2026-11-16T22:00:00-03:00"}',
+        ),
+    ]
+
+    for descricao, topico_teste, payload_teste in exemplos:
+        res = validar_mensagem_mqtt(topico_teste, payload_teste)
+        status = "VÁLIDO" if res.valido else "INVÁLIDO"
+        detalhe = (
+            f"{res.dados['id_maquina']} | {res.dados['metrica']} = "
+            f"{res.dados['payload']['valor']}{res.dados['payload']['unidade']}"
+            if res.valido
+            else res.erro
+        )
+        print(f"[{status}] {descricao} -> {detalhe}")
