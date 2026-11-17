@@ -105,3 +105,66 @@ def validar_id_maquina(id_maquina: Any) -> ResultadoValidacao:
         dados={"id_maquina": id_maquina},
     )
 
+
+def validar_topico(topico: Any) -> ResultadoValidacao:
+    # Valida um tópico concreto de publicação MQTT e extrai seus componentes
+
+    # Formato esperado: `monitoramento/<id_maquina>/<metrica>`
+    
+    if not isinstance(topico, str) or not topico:
+        return ResultadoValidacao(
+            valido=False,
+            erro="O tópico MQTT deve ser uma string não vazia.",
+        )
+
+    if "+" in topico or "#" in topico:
+        return ResultadoValidacao(
+            valido=False,
+            erro=f"Tópico publicado '{topico}' não pode conter wildcards MQTT ('+' ou '#').", # são válidos apenas em filtros de assinatura (`SUBSCRIBE`)
+        )
+
+    partes = topico.split("/")
+    if len(partes) != 3:
+        return ResultadoValidacao(
+            valido=False,
+            erro=(
+                f"Tópico '{topico}' deve possuir exatamente 3 níveis no formato "
+                f"'{PREFIXO_TOPICO}/<id_maquina>/<metrica>' (encontrados {len(partes)} níveis)."
+            ),
+        )
+
+    prefixo, id_maquina, metrica = partes
+
+    if prefixo != PREFIXO_TOPICO:
+        return ResultadoValidacao(
+            valido=False,
+            erro=f"Prefixo de tópico inválido: esperado '{PREFIXO_TOPICO}', recebido '{prefixo}'.",
+        )
+
+    resultado_id = validar_id_maquina(id_maquina)
+    if not resultado_id.valido:
+        return ResultadoValidacao(
+            valido=False,
+            erro=f"Tópico '{topico}' possui id_maquina inválido: {resultado_id.erro}",
+        )
+
+    if metrica not in METRICAS_SUPORTADAS:
+        metricas_ordenadas = ", ".join(sorted(METRICAS_SUPORTADAS))
+        return ResultadoValidacao(
+            valido=False,
+            erro=(
+                f"Métrica '{metrica}' não suportada no tópico '{topico}'. "
+                f"Valores aceitos: {metricas_ordenadas}."
+            ),
+        )
+
+    return ResultadoValidacao(
+        valido=True,
+        dados={
+            "topico": topico,
+            "prefixo": prefixo,
+            "id_maquina": id_maquina,
+            "metrica": metrica,
+        },
+    )
+
