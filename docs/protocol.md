@@ -180,3 +180,130 @@ Para suportar tanto clientes simples (como testes manuais via `mosquitto_pub`) q
 }
 ```
 
+---
+
+## 6. Exemplos de mensagens inválidas (devem ser rejeitadas)
+
+As mensagens abaixo ilustram violações de protocolo que o módulo `common/validation.py` rejeita antes que os dados alterem o estado em memória do Monitor Central:
+
+### 6.1. Campo obrigatório ausente (`timestamp` faltando)
+
+**Tópico:** `monitoramento/maquina01/cpu`
+```json
+{
+  "valor": 40.0,
+  "unidade": "%"
+}
+```
+- **Motivo da rejeição:** Campo obrigatório `timestamp` ausente no payload.
+
+### 6.2. Tipo de dado incorreto (`valor` enviado como string)
+
+**Tópico:** `monitoramento/maquina01/cpu`
+```json
+{
+  "valor": "40.0",
+  "unidade": "%",
+  "timestamp": "2026-11-16T22:00:00-03:00"
+}
+```
+- **Motivo da rejeição:** `valor` deve ser numérico (`int` ou `float`), mas foi recebido como `str`.
+
+### 6.3. Tipo booleano no lugar de número (`true` em Python é subclasse de `int`)
+
+**Tópico:** `monitoramento/maquina01/cpu`
+```json
+{
+  "valor": true,
+  "unidade": "%",
+  "timestamp": "2026-11-16T22:00:00-03:00"
+}
+```
+- **Motivo da rejeição:** Valores booleanos (`true`/`false`) não são métricas numéricas válidas.
+
+### 6.4. CPU fora da faixa permitida (`> 100.0` ou `< 0.0`)
+
+**Tópico:** `monitoramento/maquina01/cpu`
+```json
+{
+  "valor": 112.5,
+  "unidade": "%",
+  "timestamp": "2026-11-16T22:00:00-03:00"
+}
+```
+- **Motivo da rejeição:** Percentual de CPU (`112.5`) excede o limite superior de `100.0%`.
+
+### 6.5. Memória RAM negativa
+
+**Tópico:** `monitoramento/maquina01/memoria`
+```json
+{
+  "valor": -512,
+  "unidade": "MB",
+  "timestamp": "2026-11-16T22:00:00-03:00"
+}
+```
+- **Motivo da rejeição:** Consumo de memória RAM (`-512`) não pode ser negativo (`valor < 0`).
+
+### 6.6. Inconsistência matemática na RAM (`valor > total`)
+
+**Tópico:** `monitoramento/maquina01/memoria`
+```json
+{
+  "valor": 18000,
+  "unidade": "MB",
+  "timestamp": "2026-11-16T22:00:00-03:00",
+  "detalhes": {
+    "total": 16384,
+    "livre": 0
+  }
+}
+```
+- **Motivo da rejeição:** A memória utilizada (`18000 MB`) é maior que a memória total instalada (`16384 MB`).
+
+### 6.7. Unidade incompatível com a métrica do tópico
+
+**Tópico:** `monitoramento/maquina01/cpu`
+```json
+{
+  "valor": 45.0,
+  "unidade": "MB",
+  "timestamp": "2026-11-16T22:00:00-03:00"
+}
+```
+- **Motivo da rejeição:** O tópico especifica a métrica `cpu`, que exige `unidade == "%"`, mas foi recebido `"MB"`.
+
+### 6.8. Timestamp malformado ou sem fuso horário
+
+**Tópico:** `monitoramento/maquina01/cpu`
+```json
+{
+  "valor": 20.0,
+  "unidade": "%",
+  "timestamp": "16/11/2026 22:00:00"
+}
+```
+- **Motivo da rejeição:** Formato inválido; deve seguir ISO 8601 com fuso horário (ex.: `"2026-11-16T22:00:00-03:00"`). Timestamps ISO sem fuso (ex.: `"2026-11-16T22:00:00"`) também são rejeitados.
+
+### 6.9. JSON malformado (sintaxe quebrada)
+
+**Tópico:** `monitoramento/maquina01/cpu`
+```text
+{"valor": 25.5, "unidade": "%", "timestamp":
+```
+- **Motivo da rejeição:** Payload não é um JSON sintaticamente válido (`JSONDecodeError`).
+
+### 6.10. Tópico com `id_maquina` inválido
+
+**Tópico:** `monitoramento/maquina+01/cpu`
+```json
+{
+  "valor": 25.5,
+  "unidade": "%",
+  "timestamp": "2026-11-16T22:00:00-03:00"
+}
+```
+- **Motivo da rejeição:** O identificador `maquina+01` contém o caractere curinga MQTT `+`, violando a regra de formação de `id_maquina`.
+
+---
+
