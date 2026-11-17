@@ -77,3 +77,17 @@ Expressão regular canônica:
 
 ---
 
+## 4. Formato do payload JSON
+
+Toda mensagem publicada deve ser codificada em **UTF-8** contendo um **objeto JSON (`dict`)** no nível raiz.
+
+### 4.1. Campos obrigatórios (em todas as métricas)
+
+| Campo | Tipo JSON | Obrigatório | Descrição e regras |
+|---|---|---|---|
+| `valor` | `number` (`int` ou `float`) | Sim | Valor principal da medição. Rejeita strings (`"25.5"`), booleanos (`true`/`false`), `null`, `NaN` e `Infinity`. |
+| `unidade` | `string` | Sim | Unidade de medida associada ao `valor`. Deve corresponder exatamente à métrica do tópico (`"%"` para `cpu`; `"MB"` para `memoria`). |
+| `timestamp` | `string` | Sim | Data e hora da coleta no formato **ISO 8601 com fuso horário explícito** (offset `±HH:MM` ou sufixo `Z` para UTC). Ex.: `"2026-11-16T22:00:00-03:00"`. |
+
+> **Por que exigir fuso horário no `timestamp`?** Em sistemas distribuídos, agentes podem rodar em máquinas com configurações de fuso distintas ou em containers UTC. Exigir offset explícito (`-03:00` ou `Z`) elimina ambiguidades na ordenação temporal e no cálculo de última atualização no Monitor Central.
+
