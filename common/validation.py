@@ -168,3 +168,71 @@ def validar_topico(topico: Any) -> ResultadoValidacao:
         },
     )
 
+
+def validar_timestamp(timestamp: Any) -> ResultadoValidacao:
+    # Valida se `timestamp` é uma string ISO 8601 completa com fuso horário
+
+    # Exemplos aceitos:
+    # - "2026-11-16T22:00:00-03:00"
+    # - "2026-11-17T01:00:00Z"
+
+    # Exemplos rejeitados:
+    # - "2026-11-16T22:00:00" (sem fuso horário — ambíguo entre máquinas)
+    # - "2026-11-16" (só data, sem horário)
+    # - "16/11/2026 22:00:00" (fora do padrão ISO 8601)
+   
+    if not isinstance(timestamp, str) or not timestamp:
+        return ResultadoValidacao(
+            valido=False,
+            erro="O campo 'timestamp' deve ser uma string não vazia no padrão ISO 8601.",
+        )
+
+    if timestamp != timestamp.strip():
+        return ResultadoValidacao(
+            valido=False,
+            erro="O campo 'timestamp' não pode conter espaços no início ou no fim.",
+        )
+
+    # Garante que contém separador de hora ('T' ou 't'), rejeitando strings só com data
+    if "T" not in timestamp.upper():
+        return ResultadoValidacao(
+            valido=False,
+            erro=(
+                f"Timestamp '{timestamp}' inválido: deve incluir data e hora "
+                "separados por 'T' (ex.: '2026-11-16T22:00:00-03:00')."
+            ),
+        )
+
+    # Normaliza o sufixo UTC 'Z'/'z' para '+00:00' para manter compatibilidade tanto com Python 3.9/3.10 quanto com Python 3.11+
+    timestamp_normalizado = (
+        f"{timestamp[:-1]}+00:00" if timestamp[-1] in ("Z", "z") else timestamp
+    )
+
+    try:
+        dt = datetime.fromisoformat(timestamp_normalizado)
+    except ValueError:
+        return ResultadoValidacao(
+            valido=False,
+            erro=(
+                f"Timestamp '{timestamp}' não está no formato ISO 8601 válido "
+                "(ex.: '2026-11-16T22:00:00-03:00')."
+            ),
+        )
+
+    # Exige objeto timezone-aware (offset explícito)
+    if dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None:
+        return ResultadoValidacao(
+            valido=False,
+            erro=(
+                f"Timestamp '{timestamp}' deve informar o fuso horário "
+                "(ex.: '-03:00' ou 'Z')."
+            ),
+        )
+
+    return ResultadoValidacao(
+        valido=True,
+        dados={
+            "timestamp_iso": timestamp,
+            "datetime": dt,
+        },
+    )
