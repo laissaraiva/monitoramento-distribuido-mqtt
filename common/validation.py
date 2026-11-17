@@ -42,3 +42,16 @@ class ResultadoValidacao:
     erro: Optional[str] = None
     dados: Dict[str, Any] = field(default_factory=dict)
 
+
+# FUNÇÕES AUXILIARES INTERNAS
+def _eh_numero_valido(valor: Any) -> bool:
+    # Verifica se `valor` é um número finito (`int` ou `float`)    
+    if isinstance(valor, bool): # Em Python a classe `bool` herda de `int` (`issubclass(bool, int) == True`)
+        return False            # `isinstance(True, int)` retorna `True`! se não bloquar `bool`
+    if not isinstance(valor, (int, float)):
+        return False
+    if math.isnan(valor) or math.isinf(valor): # bloqueia `NaN` e `Infinity` - aceitos pelo parser JSON padrão do Python, mas são inválidos na especificação JSON (RFC 8259)
+        return False
+    return True
+
+
