@@ -91,3 +91,24 @@ Toda mensagem publicada deve ser codificada em **UTF-8** contendo um **objeto JS
 
 > **Por que exigir fuso horário no `timestamp`?** Em sistemas distribuídos, agentes podem rodar em máquinas com configurações de fuso distintas ou em containers UTC. Exigir offset explícito (`-03:00` ou `Z`) elimina ambiguidades na ordenação temporal e no cálculo de última atualização no Monitor Central.
 
+### 4.2. Campo complementar opcional (`detalhes`)
+
+Para suportar tanto clientes simples (como testes manuais via `mosquitto_pub`) quanto agentes completos em Python (`psutil`), o payload aceita o campo opcional **`detalhes`** (objeto JSON), validado sempre que estiver presente:
+
+#### A) Métrica `cpu` (`monitoramento/<id_maquina>/cpu`)
+
+- **`valor` (obrigatório):** percentual médio geral de utilização da CPU.
+  - **Faixa válida:** $0.0 \le \text{valor} \le 100.0$
+  - **Unidade obrigatória:** `"%"`
+- **`detalhes` (opcional):** objeto contendo:
+  - `por_nucleo` (`list[number]`, opcional): lista não vazia com o percentual de uso de cada núcleo lógico da CPU, onde cada elemento deve satisfazer $0.0 \le x \le 100.0$.
+
+#### B) Métrica `memoria` (`monitoramento/<id_maquina>/memoria`)
+
+- **`valor` (obrigatório):** quantidade de memória RAM utilizada.
+  - **Faixa válida:** $\text{valor} \ge 0$ (e, caso `detalhes.total` seja informado, $\text{valor} \le \text{total}$).
+  - **Unidade obrigatória:** `"MB"`
+- **`detalhes` (opcional):** objeto contendo:
+  - `total` (`number`, opcional): memória RAM física total instalada em MB ($\text{total} > 0$).
+  - `livre` (`number`, opcional): memória RAM disponível/livre em MB ($\text{livre} \ge 0$). Se `total` também for informado, deve respeitar $\text{livre} \le \text{total}$ e a consistência $\text{valor} + \text{livre} \le \text{total}$ (com tolerância de 1% + 1 MB para arredondamentos).
+  - `percentual` (`number`, opcional): percentual de memória RAM utilizada ($0.0 \le \text{percentual} \le 100.0$).
