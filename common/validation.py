@@ -19,7 +19,12 @@ UNIDADES_POR_METRICA: Dict[str, str] = {
     "memoria": "MB",
 }
 
-# Regex oficial para `id_maquina`:
+CAMPOS_OBRIGATORIOS_PAYLOAD = frozenset({"valor", "unidade", "timestamp"})
+CAMPOS_PERMITIDOS_PAYLOAD = frozenset({"valor", "unidade", "timestamp", "detalhes"})
+CAMPOS_DETALHES_CPU = frozenset({"por_nucleo"})
+CAMPOS_DETALHES_MEMORIA = frozenset({"total", "livre", "percentual"})
+
+# Regex oficial para id_maquina:
 # - Deve começar com caractere alfanumérico: [a-zA-Z0-9]
 # - Pode conter de 0 a 62 caracteres intermediários: [a-zA-Z0-9_-]
 # - Deve terminar com caractere alfanumérico: [a-zA-Z0-9]
