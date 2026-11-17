@@ -112,3 +112,11 @@ Para suportar tanto clientes simples (como testes manuais via `mosquitto_pub`) q
   - `total` (`number`, opcional): memória RAM física total instalada em MB ($\text{total} > 0$).
   - `livre` (`number`, opcional): memória RAM disponível/livre em MB ($\text{livre} \ge 0$). Se `total` também for informado, deve respeitar $\text{livre} \le \text{total}$ e a consistência $\text{valor} + \text{livre} \le \text{total}$ (com tolerância de 1% + 1 MB para arredondamentos).
   - `percentual` (`number`, opcional): percentual de memória RAM utilizada ($0.0 \le \text{percentual} \le 100.0$).
+
+### 4.3. Resumo das regras de validação por métrica
+
+| Métrica (tópico) | `unidade` esperada | Faixa de `valor` | Campos permitidos na raiz | Campos permitidos em `detalhes` |
+|---|---|---|---|---|
+| `cpu` | `"%"` | `0.0 <= valor <= 100.0` | `valor`, `unidade`, `timestamp`, `detalhes` (opc.) | `por_nucleo` (opc.) |
+| `memoria` | `"MB"` | `valor >= 0` (e `<= total`) | `valor`, `unidade`, `timestamp`, `detalhes` (opc.) | `total`, `livre`, `percentual` (opcs.) |
+
