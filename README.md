@@ -1,4 +1,4 @@
-# # Monitoramento Distribuído de Desempenho via MQTT
+# Monitoramento Distribuído de Desempenho via MQTT
 
 **Universidade Federal de Pernambuco (UFPE)**  
 **Centro de Informática (CIn)**  
@@ -9,9 +9,9 @@
 
 Este projeto tem como objetivo desenvolver um sistema distribuído para monitoramento de desempenho de computadores, utilizando o protocolo MQTT e a arquitetura Publisher/Subscriber.
 
-O sistema permitirá coletar métricas de CPU e memória RAM de diferentes máquinas e enviá-las para um monitor central, responsável por receber, organizar e apresentar as informações.
+O sistema permite coletar métricas de CPU e memória RAM de diferentes máquinas e enviá-las para um monitor central, responsável por receber, organizar e apresentar as informações.
 
-A comunicação será intermediada pelo broker MQTT Eclipse Mosquitto, permitindo que os agentes publiquem informações sem depender de uma comunicação direta com o monitor central.
+A comunicação é intermediada pelo broker MQTT Eclipse Mosquitto, permitindo que os agentes publiquem informações sem depender de uma comunicação direta com o monitor central.
 
 ## 2. Tecnologias utilizadas
 
@@ -20,8 +20,8 @@ A comunicação será intermediada pelo broker MQTT Eclipse Mosquitto, permitind
 | Python | Desenvolvimento dos agentes e do monitor central |
 | MQTT | Protocolo de comunicação entre os componentes |
 | Eclipse Mosquitto | Broker responsável pelo encaminhamento das mensagens |
-| Paho MQTT | Biblioteca Python prevista para comunicação MQTT |
-| psutil | Biblioteca Python prevista para coleta das métricas |
+| Paho MQTT | Biblioteca Python utilizada para comunicação MQTT |
+| psutil | Biblioteca Python utilizada para coleta das métricas |
 | JSON | Formato das mensagens transmitidas |
 
 ### Justificativa da escolha
@@ -34,9 +34,9 @@ O Eclipse Mosquitto foi selecionado por ser um broker MQTT de código aberto, co
 
 ## 3. Arquitetura do sistema
 
-O sistema será composto por três elementos principais:
+O sistema é composto por três elementos principais:
 
-**Agente (Publisher):** executado em cada computador monitorado. Será responsável por coletar métricas de CPU e memória RAM e publicar os dados em tópicos MQTT.
+**Agente (Publisher):** executado em cada computador monitorado. É responsável por coletar métricas de CPU e memória RAM e publicar os dados em tópicos MQTT.
 
 **Broker MQTT (Mosquitto):** recebe as publicações dos agentes e encaminha as mensagens aos clientes inscritos nos tópicos correspondentes.
 
@@ -45,17 +45,17 @@ O sistema será composto por três elementos principais:
 Fluxo de comunicação:
 
 ```text
-        Agente 1 (Publisher) ───┐
-                               │
-        Agente 2 (Publisher) ───┼──► Broker MQTT
-                               │     Mosquitto
-        Agente N (Publisher) ───┘         │
-                                         ▼
-                                 Monitor central
-                                   (Subscriber)
-                                         │
-                                         ▼
-                                  Estado em memória
+        Agente 1 (Publisher) ─────┐
+                                 │
+        Agente 2 (Publisher) ─────┼──► Broker MQTT
+                                 │       Mosquitto
+        Agente N (Publisher) ─────┘          │
+                                            ▼
+                                    Monitor central
+                                      (Subscriber)
+                                            │
+                                            ▼
+                                     Estado em memória
 ```
 
 A documentação detalhada da arquitetura está disponível em [docs/architecture.md](docs/architecture.md).
@@ -67,13 +67,13 @@ As duas métricas escolhidas são:
 - **CPU:** percentual geral de utilização e informações de utilização por núcleo lógico.
 - **Memória RAM:** quantidade total, utilizada e livre.
 
-A coleta será realizada com a biblioteca Python `psutil`.
+A coleta é realizada com a biblioteca Python `psutil`.
 
-O intervalo inicial planejado de amostragem é de **5 segundos**, podendo ser configurado posteriormente.
+O intervalo de amostragem padrão é de **5 segundos**, podendo ser configurado na execução do agente.
 
 ## 5. Hierarquia de tópicos MQTT
 
-Os tópicos seguirão o padrão:
+Os tópicos seguem o padrão:
 
 ```text
 monitoramento/<id_maquina>/cpu
@@ -92,7 +92,7 @@ monitoramento/maquina02/memoria
 
 ### Utilização de wildcards
 
-O monitor central utilizará wildcards MQTT para receber as métricas de diferentes computadores.
+O monitor central utiliza wildcards MQTT para receber as métricas de diferentes computadores.
 
 | Assinatura | Finalidade |
 |---|---|
@@ -103,78 +103,110 @@ O monitor central utilizará wildcards MQTT para receber as métricas de diferen
 
 O wildcard `+` representa exatamente um nível do tópico, enquanto `#` representa todos os níveis restantes.
 
+Os wildcards são utilizados nas assinaturas do Subscriber, não nos tópicos de publicação dos agentes.
+
 ### Qualidade de serviço (QoS)
 
 Foi escolhido **QoS 0** para a transmissão periódica das métricas.
 
-Essa configuração prioriza simplicidade e baixo custo de comunicação. Como novas leituras serão publicadas regularmente, a perda eventual de uma mensagem pode ser compensada por uma medição posterior.
+Essa configuração prioriza simplicidade e baixo custo de comunicação. Como novas leituras são publicadas regularmente, a perda eventual de uma mensagem pode ser compensada por uma medição posterior.
 
 O QoS 0 não garante a entrega de cada publicação.
 
-## 6. Formato preliminar das mensagens
+## 6. Formato das mensagens
 
-As mensagens serão transmitidas em JSON.
+As mensagens são transmitidas em JSON, seguindo o contrato definido em `docs/protocol.md`.
 
-Exemplo ilustrativo de uma publicação de CPU:
+Exemplo de uma publicação de CPU:
 
 ```json
 {
   "valor": 25.5,
   "unidade": "%",
-  "timestamp": "2026-11-16T22:00:00-03:00"
+  "timestamp": "2026-11-17T14:30:00-03:00"
 }
 ```
 
-Exemplo ilustrativo de uma publicação de memória:
+Exemplo de uma publicação de memória:
 
 ```json
 {
   "valor": 8192,
   "unidade": "MB",
-  "timestamp": "2026-11-16T22:00:00-03:00"
+  "timestamp": "2026-11-17T14:30:00-03:00"
 }
 ```
 
-Esses exemplos foram utilizados para demonstrar a comunicação MQTT.
+Esses exemplos representam o formato mínimo das mensagens. O agente também publica informações complementares no campo opcional `detalhes`, como utilização por núcleo da CPU e informações de memória total, livre e percentual.
 
-O contrato definitivo das mensagens, incluindo informações detalhadas das métricas, identificadores das máquinas, campos obrigatórios e regras de validação, será documentado em `docs/protocol.md`.
+O protocolo define os campos obrigatórios, as unidades, os identificadores das máquinas e as regras de validação, disponíveis em [docs/protocol.md](docs/protocol.md).
 
 ## 7. Modelagem do estado central
 
-O monitor central manterá os dados em memória, organizados por identificador de máquina.
+O monitor central mantém os dados em memória, organizados por identificador de máquina.
 
-Para cada computador, a estrutura prevista armazenará:
+Para cada computador, a estrutura implementada armazena:
 
 - Identificador da máquina.
 - Últimas métricas de CPU recebidas.
 - Últimas métricas de memória RAM recebidas.
 - Data e horário da última atualização.
 
-Essa estrutura será implementada no componente responsável pelo monitor central.
+Essa estrutura está implementada no componente `server/state.py`, utilizando estruturas em memória e mecanismos de sincronização para proteger o acesso aos dados.
 
-## 8. Estrutura inicial do repositório
+## 8. Estrutura do repositório
 
 ```text
 monitoramento-distribuido-mqtt/
 ├── agent/
+│   ├── collector.py
+│   └── publisher.py
+│
 ├── common/
+│   └── validation.py
+│
 ├── config/
 │   └── mosquitto.conf
+│
 ├── docs/
-│   └── architecture.md
+│   ├── architecture.md
+│   ├── protocol.md
+│   └── testing.md
+│
 ├── server/
+│   ├── state.py
+│   └── subscriber.py
+│
 ├── tests/
+│   └── test_integration.py
+│
 ├── .gitignore
-└── README.md
+├── README.md
+└── requirements.txt
 ```
 
-As pastas `agent`, `common`, `server` e `tests` foram preparadas para receber os componentes das próximas etapas de desenvolvimento.
+As pastas possuem as seguintes responsabilidades:
+
+- `agent/`: contém os componentes responsáveis pela coleta e publicação das métricas.
+- `common/`: contém as funções compartilhadas de validação do protocolo.
+- `config/`: contém a configuração do broker Mosquitto.
+- `docs/`: reúne a documentação da arquitetura, do protocolo e dos testes.
+- `server/`: contém o monitor central e a implementação do estado em memória.
+- `tests/`: contém os testes automatizados de integração.
 
 ## 9. Instalação do ambiente
 
 ### Pré-requisitos
 
-Para executar a infraestrutura MQTT atual, é necessário ter o Eclipse Mosquitto instalado.
+Para executar o projeto, é necessário ter:
+
+- Python 3 instalado.
+- Eclipse Mosquitto instalado.
+- Bibliotecas Python definidas em `requirements.txt`.
+
+No Windows, o Mosquitto pode ser instalado utilizando o instalador disponibilizado no site oficial:
+
+https://mosquitto.org/download/
 
 No macOS, a instalação pode ser realizada com o Homebrew:
 
@@ -186,6 +218,30 @@ Para verificar se o Mosquitto está disponível:
 
 ```bash
 mosquitto -h
+```
+
+### Configuração do ambiente Python
+
+Na raiz do repositório, crie um ambiente virtual.
+
+No Windows (PowerShell):
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+No Linux/macOS:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+Instale as dependências:
+
+```bash
+pip install -r requirements.txt
 ```
 
 ### Configuração do broker
@@ -201,11 +257,19 @@ Essa configuração permite conexões MQTT locais na porta `1883`.
 
 **Importante:** o broker está limitado ao endereço `127.0.0.1`, exclusivamente para desenvolvimento e testes no mesmo computador. A comunicação entre diferentes máquinas exigirá uma configuração de rede apropriada e mecanismos de segurança.
 
-## 10. Como executar a infraestrutura MQTT
+## 10. Como executar o projeto
 
 Todos os comandos devem ser executados a partir da raiz do repositório.
 
 ### Terminal 1 — Iniciar o broker
+
+No Windows (PowerShell):
+
+```powershell
+& "C:\Program Files\mosquitto\mosquitto.exe" -c ".\config\mosquitto.conf" -v
+```
+
+No Linux/macOS:
 
 ```bash
 mosquitto -c config/mosquitto.conf -v
@@ -213,73 +277,124 @@ mosquitto -c config/mosquitto.conf -v
 
 O broker deverá iniciar na porta `1883`.
 
-### Terminal 2 — Iniciar um Subscriber de teste
+### Terminal 2 — Iniciar o Subscriber
 
-```bash
-mosquitto_sub -h 127.0.0.1 -p 1883 -t 'monitoramento/+/+' -q 0 -v
+No Windows:
+
+```powershell
+.\.venv\Scripts\python.exe -m server.subscriber
 ```
 
-O Subscriber permanecerá aguardando mensagens dos tópicos correspondentes.
-
-### Terminal 3 — Publicar uma métrica de CPU
+No Linux/macOS:
 
 ```bash
-mosquitto_pub -h 127.0.0.1 -p 1883 -q 0 -t 'monitoramento/maquina01/cpu' -m '{"valor":25.5,"unidade":"%","timestamp":"2026-11-16T22:00:00-03:00"}'
+python -m server.subscriber
 ```
 
-### Publicar uma métrica de memória RAM
+O Subscriber utilizará o filtro padrão:
+
+```text
+monitoramento/+/+
+```
+
+Ele permanecerá conectado ao broker, aguardando mensagens dos agentes.
+
+### Terminal 3 — Iniciar o Publisher
+
+No Windows:
+
+```powershell
+.\.venv\Scripts\python.exe -m agent.publisher --id maquina01 --intervalo 5
+```
+
+No Linux/macOS:
 
 ```bash
-mosquitto_pub -h 127.0.0.1 -p 1883 -q 0 -t 'monitoramento/maquina01/memoria' -m '{"valor":8192,"unidade":"MB","timestamp":"2026-11-16T22:00:00-03:00"}'
+python -m agent.publisher --id maquina01 --intervalo 5
+```
+
+O agente começará a coletar e publicar as métricas de CPU e memória RAM a cada 5 segundos.
+
+### Executar com outros identificadores
+
+É possível iniciar outros agentes utilizando identificadores diferentes, desde que cada um siga as regras definidas no protocolo.
+
+Exemplo:
+
+```bash
+python -m agent.publisher --id maquina02 --intervalo 5
 ```
 
 ### Resultado esperado
 
-O terminal do Subscriber deverá exibir:
+O terminal do Subscriber deverá exibir informações semelhantes a:
 
 ```text
-monitoramento/maquina01/cpu {"valor":25.5,"unidade":"%","timestamp":"2026-11-16T22:00:00-03:00"}
-
-monitoramento/maquina01/memoria {"valor":8192,"unidade":"MB","timestamp":"2026-11-16T22:00:00-03:00"}
+2026-11-17T14:28:35-03:00 | maquina01 | cpu     | 25.5 %
+2026-11-17T14:28:35-03:00 | maquina01 | memoria | 8192 MB
 ```
+
+Os valores apresentados correspondem às métricas coletadas pelo agente.
 
 ## 11. Testes realizados
 
-Foi realizado um teste inicial da infraestrutura MQTT em ambiente local, utilizando o Eclipse Mosquitto 2.1.2 no macOS.
+Foram realizados testes manuais e automatizados para verificar o funcionamento dos componentes do sistema.
 
-Os registros do broker confirmaram:
+Os testes manuais contemplaram:
 
-- Inicialização do Mosquitto na porta `1883`.
-- Conexão de um Subscriber.
-- Assinatura do tópico `monitoramento/+/+` com QoS 0.
-- Recebimento de publicação no tópico `monitoramento/maquina01/cpu`.
-- Encaminhamento da mensagem de CPU ao Subscriber.
-- Recebimento de publicação no tópico `monitoramento/maquina01/memoria`.
-- Encaminhamento da mensagem de memória ao Subscriber.
-- Manutenção da conexão do Subscriber por meio das mensagens MQTT de keep-alive.
+- Inicialização do Mosquitto utilizando o arquivo `config/mosquitto.conf`.
+- Comunicação básica entre Publisher e Subscriber utilizando os comandos `mosquitto_pub` e `mosquitto_sub`.
+- Conexão dos componentes Python com o broker MQTT.
+- Publicação e recebimento das métricas de CPU e memória RAM.
+- Verificação do intervalo de publicação de 5 segundos.
+- Recebimento de mensagens utilizando o wildcard `+`.
+- Recebimento de mensagens utilizando o wildcard `#`.
+- Aceitação de mensagens válidas.
+- Rejeição de mensagens inválidas, incluindo valores de CPU acima de 100%.
 
-**Resultado:** a comunicação básica Publisher/Subscriber foi validada no ambiente local.
+Também foi criado o arquivo `tests/test_integration.py`, utilizando a biblioteca `unittest` do Python.
 
-Esse teste utilizou os utilitários de linha de comando do Mosquitto. A integração com os componentes definitivos em Python ainda será desenvolvida.
+Foram implementados quatro testes automatizados para verificar:
+
+- O filtro padrão utilizado pelo Subscriber.
+- O recebimento e armazenamento de mensagens válidas de CPU.
+- O recebimento e armazenamento de mensagens válidas de memória RAM.
+- A rejeição de mensagens inválidas sem alteração do último valor válido armazenado.
+
+**Resultado dos testes automatizados:**
+
+- Total de testes: 4.
+- Testes aprovados: 4.
+- Testes reprovados: 0.
+
+Comando utilizado para execução:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_integration.py" -v
+```
+
+Os procedimentos completos e os resultados dos testes estão disponíveis em [docs/testing.md](docs/testing.md).
 
 ## 12. Estado atual do projeto
 
-A estrutura inicial do repositório, a documentação da arquitetura, a definição dos tópicos e a configuração local do broker MQTT foram preparadas.
+A primeira entrega do projeto contempla a arquitetura MQTT, a configuração do broker, a definição dos tópicos, a especificação do protocolo de comunicação e a implementação dos componentes principais.
 
-A comunicação básica entre publicação e assinatura MQTT foi testada com sucesso.
+Atualmente, o sistema possui:
 
-As próximas implementações incluem:
+- Agente Publisher em Python, responsável pela coleta e publicação das métricas de CPU e memória RAM.
+- Broker Eclipse Mosquitto configurado para execução local.
+- Monitor central Subscriber, responsável por receber mensagens utilizando wildcards MQTT.
+- Estrutura de armazenamento do estado das máquinas em memória.
+- Módulo compartilhado de validação das mensagens.
+- Documentação da arquitetura e do protocolo.
+- Testes manuais e automatizados básicos de integração.
 
-- Definição definitiva do protocolo JSON e das validações.
-- Desenvolvimento do agente Publisher em Python.
-- Desenvolvimento do monitor central Subscriber.
-- Implementação do armazenamento do estado em memória.
-- Integração dos componentes e testes completos.
+Os testes realizados confirmaram a comunicação entre os componentes e o funcionamento das principais validações do protocolo em ambiente local.
 
-## 13. Limitações da configuração inicial
+## 13. Limitações da configuração atual
 
-- Os testes de comunicação foram realizados localmente, usando `127.0.0.1`.
+- Os testes de comunicação foram realizados localmente, utilizando `127.0.0.1`.
 - A configuração atual do broker permite acesso anônimo somente na interface local.
-- Ainda não foram implementados os agentes e o monitor central definitivos em Python.
-- O contrato JSON completo e as validações específicas serão definidos na documentação do protocolo.
-- A arquitetura foi preparada para múltiplas máquinas, mas essa comunicação ainda não foi testada em computadores físicos diferentes.
+- A comunicação entre computadores físicos diferentes ainda não foi validada.
+- Não foram implementados mecanismos de autenticação e criptografia para comunicação externa.
+- O estado das máquinas é mantido em memória, sem persistência após o encerramento do monitor central.
