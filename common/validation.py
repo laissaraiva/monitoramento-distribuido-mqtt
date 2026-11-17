@@ -315,3 +315,71 @@ def _validar_estrutura_base_payload(payload: Any, metrica: str) -> ResultadoVali
         },
     )
 
+
+def validar_payload_cpu(payload: Any) -> ResultadoValidacao:
+    # Valida um dicionário de payload para a métrica cpu
+
+    # Regras de CPU:
+    # - unidade deve ser "%"
+    # - 0.0 <= valor <= 100.0
+    # - Se detalhes estiver presente, deve ser um dict contendo opcionalmente por_nucleo (lista não vazia de números entre 0.0 e 100.0)
+    base = _validar_estrutura_base_payload(payload, metrica="cpu")
+    if not base.valido:
+        return base
+
+    valor_cpu = float(payload["valor"])
+    if not (0.0 <= valor_cpu <= 100.0):
+        return ResultadoValidacao(
+            valido=False,
+            erro=f"Valor de CPU fora da faixa válida [0.0, 100.0]: recebido {valor_cpu}.",
+        )
+
+    if "detalhes" in payload and payload["detalhes"] is not None:
+        detalhes = payload["detalhes"]
+        if not isinstance(detalhes, dict):
+            return ResultadoValidacao(
+                valido=False,
+                erro=f"Campo 'detalhes' deve ser um objeto JSON, mas recebeu {type(detalhes).__name__}.",
+            )
+
+        chaves_invalidas = sorted(set(detalhes.keys()) - CAMPOS_DETALHES_CPU)
+        if chaves_invalidas:
+            return ResultadoValidacao(
+                valido=False,
+                erro=(
+                    f"Campos não permitidos em 'detalhes' para CPU: {', '.join(chaves_invalidas)}. "
+                    "Campos aceitos: por_nucleo."
+                ),
+            )
+
+        if "por_nucleo" in detalhes and detalhes["por_nucleo"] is not None:
+            por_nucleo = detalhes["por_nucleo"]
+            if not isinstance(por_nucleo, list) or len(por_nucleo) == 0:
+                return ResultadoValidacao(
+                    valido=False,
+                    erro="Campo 'detalhes.por_nucleo' deve ser uma lista não vazia de percentuais.",
+                )
+
+            for indice, uso_nucleo in enumerate(por_nucleo):
+                if not _eh_numero_valido(uso_nucleo):
+                    return ResultadoValidacao(
+                        valido=False,
+                        erro=(
+                            f"Elemento 'detalhes.por_nucleo[{indice}]' deve ser numérico, "
+                            f"mas recebeu {type(uso_nucleo).__name__} ({uso_nucleo!r})."
+                        ),
+                    )
+                if not (0.0 <= float(uso_nucleo) <= 100.0):
+                    return ResultadoValidacao(
+                        valido=False,
+                        erro=(
+                            f"Elemento 'detalhes.por_nucleo[{indice}]' ({uso_nucleo}) "
+                            "fora da faixa válida [0.0, 100.0]."
+                        ),
+                    )
+
+    return ResultadoValidacao(
+        valido=True,
+        dados=base.dados,
+    )
+
