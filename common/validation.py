@@ -55,3 +55,53 @@ def _eh_numero_valido(valor: Any) -> bool:
     return True
 
 
+# VALIDADORES DE IDENTIFICADOR, TÓPICO E TIMESTAMP
+def validar_id_maquina(id_maquina: Any) -> ResultadoValidacao:
+    # Valida o identificador de uma máquina monitorada (`id_maquina`)
+
+    # Deve ser string (`str`) não vazia;
+    if not isinstance(id_maquina, str): 
+        return ResultadoValidacao(
+            valido=False,
+            erro=f"id_maquina deve ser string, mas recebeu {type(id_maquina).__name__}.",
+        )
+
+    # Não pode conter curingas MQTT (`+`, `#`), separador (`/`) ou espaços;
+    if not id_maquina:
+        return ResultadoValidacao(
+            valido=False,
+            erro="id_maquina não pode ser uma string vazia.",
+        )
+
+    # Verificações explícitas antes do regex para gerar mensagens didáticas
+    if any(caractere in id_maquina for caractere in ("+", "#", "/")):
+        return ResultadoValidacao(
+            valido=False,
+            erro=(
+                f"id_maquina '{id_maquina}' contém caracteres reservados do MQTT "
+                "('+', '#' ou '/')."
+            ),
+        )
+
+    if any(caractere.isspace() for caractere in id_maquina):
+        return ResultadoValidacao(
+            valido=False,
+            erro=f"id_maquina '{id_maquina}' não pode conter espaços em branco.",
+        )
+
+    # Deve ter entre 2 e 64 caracteres, iniciando e terminando com alfanumérico
+    if not REGEX_ID_MAQUINA.match(id_maquina):
+        return ResultadoValidacao(
+            valido=False,
+            erro=(
+                f"id_maquina '{id_maquina}' inválido. Deve ter entre 2 e 64 caracteres "
+                "(letras ASCII, números, '-' ou '_'), iniciando e terminando com "
+                "caractere alfanumérico."
+            ),
+        )
+
+    return ResultadoValidacao(
+        valido=True,
+        dados={"id_maquina": id_maquina},
+    )
+
