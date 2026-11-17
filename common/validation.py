@@ -60,6 +60,10 @@ def _eh_numero_valido(valor: Any) -> bool:
         return False
     return True
 
+def _rejeitar_constante_json(constante: str) -> None:
+    # Callback para `json.loads(..., parse_constant=...)` bloquear NaN/Infinity
+    raise ValueError(f"Constante numérica não permitida em JSON: '{constante}'.")
+
 
 # VALIDADORES DE IDENTIFICADOR, TÓPICO E TIMESTAMP
 def validar_id_maquina(id_maquina: Any) -> ResultadoValidacao:
