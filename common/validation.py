@@ -246,3 +246,72 @@ def validar_timestamp(timestamp: Any) -> ResultadoValidacao:
             "datetime": dt,
         },
     )
+
+# VALIDADORES DE PAYLOAD (BASE, CPU E MEMÓRIA RAM)
+def _validar_estrutura_base_payload(payload: Any, metrica: str) -> ResultadoValidacao:
+    # Valida a estrutura comum a qualquer payload de métrica (CPU ou Memória)
+    
+    # Checa se payload é um dicionário JSON (dict)
+    if not isinstance(payload, dict):
+        return ResultadoValidacao(
+            valido=False,
+            erro=f"Payload deve ser um objeto JSON (dict), mas recebeu {type(payload).__name__}.",
+        )
+
+    # Checa se todos os campos obrigatórios (valor, unidade, timestamp) estão presentes
+    campos_presentes = set(payload.keys())
+    campos_faltantes = sorted(CAMPOS_OBRIGATORIOS_PAYLOAD - campos_presentes)
+    if campos_faltantes:
+        return ResultadoValidacao(
+            valido=False,
+            erro=f"Campos obrigatórios ausentes no payload: {', '.join(campos_faltantes)}.",
+        )
+
+    # Checa se não existem campos desconhecidos na raiz do payload
+    campos_desconhecidos = sorted(campos_presentes - CAMPOS_PERMITIDOS_PAYLOAD)
+    if campos_desconhecidos:
+        return ResultadoValidacao(
+            valido=False,
+            erro=(
+                f"Campos não permitidos na raiz do payload: {', '.join(campos_desconhecidos)}. "
+                "Campos aceitos: valor, unidade, timestamp, detalhes."
+            ),
+        )
+
+    # Checa se valor é numérico finito, unidade corresponde à métrica e timestamp é ISO 8601
+    valor = payload["valor"]
+    if not _eh_numero_valido(valor):
+        return ResultadoValidacao(
+            valido=False,
+            erro=(
+                f"Campo 'valor' deve ser numérico finito (int ou float), "
+                f"mas recebeu {type(valor).__name__} ({valor!r})."
+            ),
+        )
+
+    unidade = payload["unidade"]
+    unidade_esperada = UNIDADES_POR_METRICA[metrica]
+    if not isinstance(unidade, str) or unidade != unidade_esperada:
+        return ResultadoValidacao(
+            valido=False,
+            erro=(
+                f"Unidade inválida para a métrica '{metrica}': "
+                f"esperado '{unidade_esperada}', recebido {unidade!r}."
+            ),
+        )
+
+    resultado_ts = validar_timestamp(payload["timestamp"])
+    if not resultado_ts.valido:
+        return ResultadoValidacao(
+            valido=False,
+            erro=resultado_ts.erro,
+        )
+
+    return ResultadoValidacao(
+        valido=True,
+        dados={
+            "payload": payload,
+            "datetime": resultado_ts.dados["datetime"],
+        },
+    )
+
