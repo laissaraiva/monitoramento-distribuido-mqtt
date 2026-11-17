@@ -33,3 +33,11 @@ Tópicos válidos:
 - `monitoramento/<id_maquina>/memoria`
 
 > **Sobre wildcards MQTT:** Os curingas `+` (nível único) e `#` (múltiplos níveis), como `monitoramento/+/+` ou `monitoramento/#`, são utilizados exclusivamente na assinatura (`SUBSCRIBE`) pelo monitor central. Em mensagens publicadas (`PUBLISH`), o tópico recebido pelo subscriber não pode conter `+` ou `#`.
+
+### 2.2. Qualidade de Serviço (QoS)
+
+- **QoS adotado:** `0` (*At most once* —> no máximo uma entrega);
+- **Justificativa:** Como as leituras são periódicas (padrão de 5 segundos), o envio contínuo sem confirmação de recebimento reduz latência e sobrecarga de rede; eventual perda pontual é naturalmente suprida pela amostra seguinte.
+
+---
+
