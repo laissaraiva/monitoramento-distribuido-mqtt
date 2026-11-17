@@ -383,3 +383,106 @@ def validar_payload_cpu(payload: Any) -> ResultadoValidacao:
         dados=base.dados,
     )
 
+
+def validar_payload_memoria(payload: Any) -> ResultadoValidacao:
+    # Valida um dicionário de payload para a métrica memoria (RAM)
+
+    # Regras de Memória RAM:
+    # - unidade deve ser "MB"
+    # - valor >= 0.0 (memória utilizada em MB)
+    # - Se detalhes estiver presente, valida opcionalmente total (> 0), livre (>= 0) e percentual ([0.0, 100.0]), 
+    # além de manter (valor <= total e valor + livre <= total com margem de arredondamento)
+    
+    base = _validar_estrutura_base_payload(payload, metrica="memoria")
+    if not base.valido:
+        return base
+
+    valor_usado = float(payload["valor"])
+    if valor_usado < 0.0:
+        return ResultadoValidacao(
+            valido=False,
+            erro=f"Valor de memória RAM utilizada não pode ser negativo: recebido {valor_usado}.",
+        )
+
+    if "detalhes" in payload and payload["detalhes"] is not None:
+        detalhes = payload["detalhes"]
+        if not isinstance(detalhes, dict):
+            return ResultadoValidacao(
+                valido=False,
+                erro=f"Campo 'detalhes' deve ser um objeto JSON, mas recebeu {type(detalhes).__name__}.",
+            )
+
+        chaves_invalidas = sorted(set(detalhes.keys()) - CAMPOS_DETALHES_MEMORIA)
+        if chaves_invalidas:
+            return ResultadoValidacao(
+                valido=False,
+                erro=(
+                    f"Campos não permitidos em 'detalhes' para memória: {', '.join(chaves_invalidas)}. "
+                    "Campos aceitos: total, livre, percentual."
+                ),
+            )
+
+        total_mb: Optional[float] = None
+        livre_mb: Optional[float] = None
+
+        if "total" in detalhes and detalhes["total"] is not None:
+            total_bruto = detalhes["total"]
+            if not _eh_numero_valido(total_bruto) or float(total_bruto) <= 0.0:
+                return ResultadoValidacao(
+                    valido=False,
+                    erro=f"Campo 'detalhes.total' deve ser um número maior que zero (recebido {total_bruto!r}).",
+                )
+            total_mb = float(total_bruto)
+            if valor_usado > total_mb:
+                return ResultadoValidacao(
+                    valido=False,
+                    erro=(
+                        f"Inconsistência na memória RAM: 'valor' utilizado ({valor_usado} MB) "
+                        f"excede 'detalhes.total' ({total_mb} MB)."
+                    ),
+                )
+
+        if "livre" in detalhes and detalhes["livre"] is not None:
+            livre_bruto = detalhes["livre"]
+            if not _eh_numero_valido(livre_bruto) or float(livre_bruto) < 0.0:
+                return ResultadoValidacao(
+                    valido=False,
+                    erro=f"Campo 'detalhes.livre' deve ser um número >= 0 (recebido {livre_bruto!r}).",
+                )
+            livre_mb = float(livre_bruto)
+
+            if total_mb is not None:
+                if livre_mb > total_mb:
+                    return ResultadoValidacao(
+                        valido=False,
+                        erro=(
+                            f"Inconsistência na memória RAM: 'detalhes.livre' ({livre_mb} MB) "
+                            f"excede 'detalhes.total' ({total_mb} MB)."
+                        ),
+                    )
+                # Tolerância de 1% + 1 MB para diferenças de arredondamento de coleta
+                if (valor_usado + livre_mb) > (total_mb * 1.01 + 1.0):
+                    return ResultadoValidacao(
+                        valido=False,
+                        erro=(
+                            f"Inconsistência na memória RAM: soma de utilizada ({valor_usado} MB) "
+                            f"e livre ({livre_mb} MB) excede o total ({total_mb} MB)."
+                        ),
+                    )
+
+        if "percentual" in detalhes and detalhes["percentual"] is not None:
+            perc_bruto = detalhes["percentual"]
+            if not _eh_numero_valido(perc_bruto) or not (0.0 <= float(perc_bruto) <= 100.0):
+                return ResultadoValidacao(
+                    valido=False,
+                    erro=(
+                        "Campo 'detalhes.percentual' deve ser um número entre 0.0 e 100.0 "
+                        f"(recebido {perc_bruto!r})."
+                    ),
+                )
+
+    return ResultadoValidacao(
+        valido=True,
+        dados=base.dados,
+    )
+
