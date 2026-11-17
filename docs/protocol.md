@@ -307,3 +307,8 @@ As mensagens abaixo ilustram violações de protocolo que o módulo `common/vali
 
 ---
 
+## 7. Fluxo de validação
+
+O módulo `common/validation.py` fornece funções reutilizáveis (sem dependências externas, apenas biblioteca padrão do Python 3) para duas pontas do sistema:
+1. **Agente (`agent/publisher.py`):** Pode validar o tópico e o payload antes de chamar `client.publish(...)`, evitando poluir o broker com mensagens fora do contrato.
+2. **Monitor Central (`server/subscriber.py`):** Valida toda mensagem recebida no callback `on_message` antes de atualizar o dicionário de estado em memória. Mensagens inválidas são descartadas com registro de log de alerta, preservando a integridade do estado central.
