@@ -1,10 +1,10 @@
-# Relat�rio de Testes ? Equipe 06 - Entrega 1
+# Relatório de Testes — Equipe 06 — Entrega 1
 
 ## 1. Objetivo
 
-Apresentamos os testes realizados na primeira entrega do sistema distribu�do de monitoramento utilizando MQTT.
+Apresentamos os testes realizados na primeira entrega do sistema distribuído de monitoramento utilizando MQTT.
 
-Os testes t�m como objetivo verificar a comunica��o entre o Publisher, o broker Mosquitto e o Subscriber, al�m de conferir o funcionamento das valida��es do protocolo e do armazenamento das m�tricas em mem�ria.
+Os testes têm como objetivo verificar a comunicação entre o Publisher, o broker Mosquitto e o Subscriber, além de conferir o funcionamento das validações do protocolo e do armazenamento das métricas em memória.
 
 ## 2. Ambiente de testes
 
@@ -13,39 +13,39 @@ Os testes t�m como objetivo verificar a comunica��o entre o Publisher, o b
 - Broker MQTT: Eclipse Mosquitto 2.1.2
 - Protocolo: MQTT
 - Porta: 1883
-- Endere�o do broker: 127.0.0.1
-- M�tricas monitoradas: CPU e mem�ria RAM
-- Intervalo de publica��o: 5 segundos
+- Endereço do broker: 127.0.0.1
+- Métricas monitoradas: CPU e memória RAM
+- Intervalo de publicação: 5 segundos
 - QoS: 0
 
 ## 3. Testes manuais realizados
 
-### 3.1. Inicializa��o do broker Mosquitto
+### 3.1. Inicialização do broker Mosquitto
 
-**Procedimento:** inicializa��o do Mosquitto utilizando o arquivo de configura��o `config/mosquitto.conf`.
+**Procedimento:** inicialização do Mosquitto utilizando o arquivo de configuração `config/mosquitto.conf`.
 
-**Resultado obtido:** o broker iniciou corretamente e ficou dispon�vel na porta 1883.
+**Resultado obtido:** o broker iniciou corretamente e ficou disponível na porta 1883.
 
 **Status:** APROVADO.
 
-### 3.2. Comunica��o b�sica entre Publisher e Subscriber
+### 3.2. Comunicação básica entre Publisher e Subscriber
 
-**Procedimento:** utiliza��o dos comandos `mosquitto_pub` e `mosquitto_sub` para publicar e receber uma mensagem de teste no t�pico `teste/equipe06`, utilizando o wildcard `#`.
+**Procedimento:** utilização dos comandos `mosquitto_pub` e `mosquitto_sub` para publicar e receber uma mensagem de teste no tópico `teste/equipe06`, utilizando o wildcard `#`.
 
 **Resultado obtido:** a mensagem "Teste de comunicacao MQTT" foi recebida corretamente pelo subscriber.
 
 **Status:** APROVADO.
 
-### 3.3. Integra��o entre os componentes do sistema
+### 3.3. Integração entre os componentes do sistema
 
 **Procedimento:**
-1. Inicializa��o do broker Mosquitto.
-2. Execu��o do monitor central por meio de `server.subscriber`.
-3. Execu��o do agente por meio de `agent.publisher`, utilizando o identificador `maquina01` e intervalo de 5 segundos.
+1. Inicialização do broker Mosquitto.
+2. Execução do monitor central por meio de `server.subscriber`.
+3. Execução do agente por meio de `agent.publisher`, utilizando o identificador `maquina01` e intervalo de 5 segundos.
 
-**Resultado obtido:** o Publisher conectou-se ao broker e publicou as m�tricas de CPU e mem�ria RAM. O Subscriber recebeu corretamente as mensagens, exibindo valores, unidades, timestamps e informa��es complementares.
+**Resultado obtido:** o Publisher conectou-se ao broker e publicou as métricas de CPU e memória RAM. O Subscriber recebeu corretamente as mensagens, exibindo valores, unidades, timestamps e informações complementares.
 
-Foram utilizados os t�picos:
+Foram utilizados os tópicos:
 
 - `monitoramento/maquina01/cpu`
 - `monitoramento/maquina01/memoria`
@@ -54,30 +54,30 @@ Foram utilizados os t�picos:
 
 ### 3.4. Recebimento utilizando wildcard +
 
-**Procedimento:** execu��o do Subscriber com o filtro `monitoramento/+/+`.
+**Procedimento:** execução do Subscriber com o filtro `monitoramento/+/+`.
 
-**Resultado obtido:** o monitor central recebeu corretamente as mensagens de CPU e mem�ria RAM publicadas pelo agente.
+**Resultado obtido:** o monitor central recebeu corretamente as mensagens de CPU e memória RAM publicadas pelo agente.
 
 **Status:** APROVADO.
 
 ### 3.5. Recebimento utilizando wildcard #
 
-**Procedimento:** execu��o do Subscriber com o filtro `monitoramento/#`, seguida da publica��o das m�tricas pelo agente.
+**Procedimento:** execução do Subscriber com o filtro `monitoramento/#`, seguida da publicação das métricas pelo agente.
 
-**Resultado obtido:** as mensagens correspondentes aos t�picos de CPU e mem�ria RAM foram recebidas corretamente.
+**Resultado obtido:** as mensagens correspondentes aos tópicos de CPU e memória RAM foram recebidas corretamente.
 
 **Status:** APROVADO.
 
-### 3.6. Valida��o de mensagens v�lidas e inv�lidas
+### 3.6. Validação de mensagens válidas e inválidas
 
-**Procedimento:** publica��o de duas mensagens de CPU no t�pico `monitoramento/maquina01/cpu`.
+**Procedimento:** publicação de duas mensagens de CPU no tópico `monitoramento/maquina01/cpu`.
 
-- Mensagem v�lida: CPU de 25,5%.
-- Mensagem inv�lida: CPU de 112,5%.
+- Mensagem válida: CPU de 25,5%.
+- Mensagem inválida: CPU de 112,5%.
 
-**Resultado obtido:** a mensagem v�lida foi recebida e armazenada. A mensagem inv�lida foi rejeitada pela valida��o do protocolo, pois ultrapassava o limite de 100%.
+**Resultado obtido:** a mensagem válida foi recebida e armazenada. A mensagem inválida foi rejeitada pela validação do protocolo, pois ultrapassava o limite de 100%.
 
-Foi verificado que o valor inv�lido n�o substituiu a �ltima leitura v�lida no estado em mem�ria.
+Foi verificado que o valor inválido não substituiu a última leitura válida no estado em memória.
 
 **Status:** APROVADO.
 
@@ -87,14 +87,14 @@ Foi criado o arquivo `tests/test_integration.py`, utilizando a biblioteca `unitt
 
 Foram implementados quatro testes:
 
-| Teste | Descri��o | Resultado |
+| Teste | Descrição | Resultado |
 |---|---|---|
-| `test_filtro_wildcard` | Verifica o filtro padr�o do Subscriber. | APROVADO |
+| `test_filtro_wildcard` | Verifica o filtro padrão do Subscriber. | APROVADO |
 | `test_recebimento_cpu_valida` | Verifica o recebimento e armazenamento de CPU. | APROVADO |
 | `test_recebimento_memoria_valida` | Verifica o recebimento e armazenamento de RAM. | APROVADO |
-| `test_mensagem_invalida_nao_atualiza_estado` | Verifica a rejei��o de mensagens inv�lidas. | APROVADO |
+| `test_mensagem_invalida_nao_atualiza_estado` | Verifica a rejeição de mensagens inválidas. | APROVADO |
 
-**Comando utilizado para execu��o:**
+**Comando utilizado para execução:**
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_integration.py" -v
@@ -108,14 +108,14 @@ Foram implementados quatro testes:
 
 **Status: APROVADO.**
 
-Os testes automatizados verificam o processamento das mensagens pelo callback do Subscriber, incluindo valida��o e atualiza��o do estado em mem�ria. A comunica��o real com o broker foi verificada separadamente nos testes manuais.
+Os testes automatizados verificam o processamento das mensagens pelo callback do Subscriber, incluindo validação e atualização do estado em memória. A comunicação real com o broker foi verificada separadamente nos testes manuais.
 
-## 5. Conclus�o
+## 5. Conclusão
 
-Os testes realizados demonstraram o funcionamento da comunica��o MQTT entre o agente de monitoramento, o broker Mosquitto e o monitor central.
+Os testes realizados demonstraram o funcionamento da comunicação MQTT entre o agente de monitoramento, o broker Mosquitto e o monitor central.
 
-Foi poss�vel verificar a publica��o peri�dica das m�tricas de CPU e mem�ria RAM, o recebimento das mensagens por meio dos wildcards definidos na arquitetura e a rejei��o de dados que n�o respeitam as regras do protocolo.
+Foi possível verificar a publicação periódica das métricas de CPU e memória RAM, o recebimento das mensagens por meio dos wildcards definidos na arquitetura e a rejeição de dados que não respeitam as regras do protocolo.
 
-Os quatro testes automatizados tamb�m foram executados com sucesso.
+Os quatro testes automatizados também foram executados com sucesso.
 
-Dessa forma, os testes realizados atendem �s verifica��es b�sicas de integra��o previstas para a primeira entrega do projeto.
+Dessa forma, os testes realizados atendem às verificações básicas de integração previstas para a primeira entrega do projeto.
