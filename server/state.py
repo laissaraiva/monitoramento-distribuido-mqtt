@@ -1,13 +1,14 @@
 # Estado central das máquinas monitoradas (mantido em memória)
 
-# É guardado, pra cada máquina (id_maquina), a ÚLTIMA métrica de
-# cpu e a ÚLTIMA métrica de memoria recebidas, além da hora da última atualização
+# É guardado, pra cada máquina (id_maquina), a última métrica de
+# cpu e a última métrica de memoria recebidas, além da hora da última atualização
 
 # Cada máquina tem sua entrada e dentro dela cada métrica tem sua chave. Atualizar cpu só troca metricas["cpu"]
 
 import copy
+import logging
 import threading
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -16,6 +17,8 @@ from common.validation import (
     METRICAS_SUPORTADAS,
     validar_id_maquina,
 )
+
+logger = logging.getLogger("monitor.estado")
 
 @dataclass
 class MetricaRecebida:
@@ -91,7 +94,8 @@ class EstadoCentral:
         # Busca a máquina, cria se não existir, grava a métrica
         with self._lock:
             maquina = self._maquinas.get(id_maquina)
-            if maquina is None:
+            nova_maquina = maquina is None  # Guarda se a máquina é nova pro log
+            if nova_maquina:
                 maquina = EstadoMaquina(id_maquina=id_maquina)
                 self._maquinas[id_maquina] = maquina
 
@@ -99,7 +103,23 @@ class EstadoCentral:
             maquina.metricas[metrica] = leitura
             maquina.ultima_atualizacao = recebido_em
 
-            return copy.deepcopy(maquina)
+            copia = copy.deepcopy(maquina)
+            total = len(self._maquinas)
+
+        # Logs fora da trava
+        if nova_maquina:
+            # INFO só uma vez por máquina
+            logger.info(
+                "Nova máquina registrada: %s (total: %d)", id_maquina, total
+            )
+
+        # Debug a cada leitura
+        logger.debug(
+            "Estado atualizado: %s/%s = %s %s (payload %s, recebido %s)",
+            id_maquina, metrica, leitura.valor, leitura.unidade,
+            leitura.timestamp, recebido_em.isoformat(timespec="seconds"),
+        )
+        return copia
 
     def obter(self, id_maquina: str) -> Optional[EstadoMaquina]:
         #Cópia do estado de uma máquina, ou None se ela é desconhecida
@@ -122,6 +142,33 @@ class EstadoCentral:
         # Cópias de todas as máquinas, ordenadas por id_maquina
         with self._lock:
             return [copy.deepcopy(self._maquinas[i]) for i in sorted(self._maquinas)]
+
+    # Listagem de dicts ordenada por id_maquina
+    def snapshot(self) -> List[Dict[str, Any]]:
+        # Formato de cada item:
+        # { "id_maquina": "maquina01",
+        #   "cpu": {"valor", "unidade", "timestamp", "detalhes", "recebido_em"} ou None,
+        #   "memoria": {mesmos campos} ou None,
+        #   "ultima_atualizacao": datetime (relógio do servidor) }
+        with self._lock:
+            return [
+                self._linha_snapshot(self._maquinas[i])
+                for i in sorted(self._maquinas)
+            ]
+
+    # Transforma uma EstadoMaquina em dict independente (cópia)
+    # Só é chamada de dentro do snapshot, com a trava já adquirida
+    @staticmethod
+    def _linha_snapshot(maquina: EstadoMaquina) -> Dict[str, Any]:
+        def como_dict(leitura: Optional[MetricaRecebida]) -> Optional[Dict[str, Any]]:
+            return asdict(leitura) if leitura is not None else None
+
+        return {
+            "id_maquina": maquina.id_maquina,
+            "cpu": como_dict(maquina.metricas.get("cpu")),
+            "memoria": como_dict(maquina.metricas.get("memoria")),
+            "ultima_atualizacao": maquina.ultima_atualizacao,
+        }
 
     def total_maquinas(self) -> int:
         #Quantidade de máquinas conhecidas
