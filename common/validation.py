@@ -4,11 +4,11 @@
 # entre os ambientes dos agentes (publishers) e do monitor central (subscriber)
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import json
 import math
 import re
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 # CONSTANTES DO PROTOCOLO (definidas em docs/architecture.md e docs/protocol.md)
 PREFIXO_TOPICO: str = "monitoramento"
@@ -30,6 +30,19 @@ CAMPOS_DETALHES_MEMORIA = frozenset({"total", "livre", "percentual"})
 # - Deve terminar com caractere alfanumérico: [a-zA-Z0-9]
 # - Resultado é comprimento total entre 2 e 64 caracteres
 REGEX_ID_MAQUINA = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}[a-zA-Z0-9]$")
+
+REGEX_TIMESTAMP = re.compile(
+    r"^(?P<ano>\d{4})-(?P<mes>\d{2})-(?P<dia>\d{2})"
+    r"T(?P<hora>\d{2}):(?P<minuto>\d{2}):(?P<segundo>\d{2})"
+    r"(?:\.(?P<fracao>\d{1,6}))?"
+    r"(?P<fuso>Z|[+-]\d{2}:\d{2})$",
+    re.ASCII,
+)
+
+DESLOCAMENTO_FUSO_MAXIMO = timedelta(hours=14)
+TAMANHO_MAXIMO_PAYLOAD_BYTES: int = 64 * 1024
+TOLERANCIA_PERCENTUAL: float = 1.0
+TAMANHO_MAXIMO_TEXTO_ERRO: int = 60
 
 
 # ESTRUTURAS DE RETORNO E EXCEÇÃO
@@ -56,13 +69,31 @@ def _eh_numero_valido(valor: Any) -> bool:
         return False            # isinstance(True, int) retorna True! se não bloquar bool
     if not isinstance(valor, (int, float)):
         return False
-    if math.isnan(valor) or math.isinf(valor): # bloqueia NaN e Infinity - aceitos pelo parser JSON padrão do Python, mas são inválidos na especificação JSON (RFC 8259)
+    try:
+        return math.isfinite(float(valor))
+    except OverflowError:
         return False
-    return True
+
+
+def _resumir(valor: Any) -> str:
+    texto = repr(valor)
+    if len(texto) <= TAMANHO_MAXIMO_TEXTO_ERRO:
+        return texto
+    return f"{texto[:TAMANHO_MAXIMO_TEXTO_ERRO]}..."
+
 
 def _rejeitar_constante_json(constante: str) -> None:
     # Callback para `json.loads(..., parse_constant=...)` bloquear NaN/Infinity
     raise ValueError(f"Constante numérica não permitida em JSON: '{constante}'.")
+
+
+def _rejeitar_chaves_duplicadas(pares: List[Tuple[str, Any]]) -> Dict[str, Any]:
+    objeto: Dict[str, Any] = {}
+    for chave, valor in pares:
+        if chave in objeto:
+            raise ValueError(f"Chave duplicada no objeto JSON: {_resumir(chave)}")
+        objeto[chave] = valor
+    return objeto
 
 
 # VALIDADORES DE IDENTIFICADOR, TÓPICO E TIMESTAMP
@@ -88,7 +119,7 @@ def validar_id_maquina(id_maquina: Any) -> ResultadoValidacao:
         return ResultadoValidacao(
             valido=False,
             erro=(
-                f"id_maquina '{id_maquina}' contém caracteres reservados do MQTT "
+                f"id_maquina {_resumir(id_maquina)} contém caracteres reservados do MQTT "
                 "('+', '#' ou '/')."
             ),
         )
@@ -96,15 +127,15 @@ def validar_id_maquina(id_maquina: Any) -> ResultadoValidacao:
     if any(caractere.isspace() for caractere in id_maquina):
         return ResultadoValidacao(
             valido=False,
-            erro=f"id_maquina '{id_maquina}' não pode conter espaços em branco.",
+            erro=f"id_maquina {_resumir(id_maquina)} não pode conter espaços em branco.",
         )
 
     # Deve ter entre 2 e 64 caracteres, iniciando e terminando com alfanumérico
-    if not REGEX_ID_MAQUINA.match(id_maquina):
+    if not REGEX_ID_MAQUINA.fullmatch(id_maquina):
         return ResultadoValidacao(
             valido=False,
             erro=(
-                f"id_maquina '{id_maquina}' inválido. Deve ter entre 2 e 64 caracteres "
+                f"id_maquina {_resumir(id_maquina)} inválido. Deve ter entre 2 e 64 caracteres "
                 "(letras ASCII, números, '-' ou '_'), iniciando e terminando com "
                 "caractere alfanumérico."
             ),
@@ -130,7 +161,7 @@ def validar_topico(topico: Any) -> ResultadoValidacao:
     if "+" in topico or "#" in topico:
         return ResultadoValidacao(
             valido=False,
-            erro=f"Tópico publicado '{topico}' não pode conter wildcards MQTT ('+' ou '#').", # são válidos apenas em filtros de assinatura (SUBSCRIBE)
+            erro=f"Tópico publicado {_resumir(topico)} não pode conter wildcards MQTT ('+' ou '#').", # são válidos apenas em filtros de assinatura (SUBSCRIBE)
         )
 
     partes = topico.split("/")
@@ -138,7 +169,7 @@ def validar_topico(topico: Any) -> ResultadoValidacao:
         return ResultadoValidacao(
             valido=False,
             erro=(
-                f"Tópico '{topico}' deve possuir exatamente 3 níveis no formato "
+                f"Tópico {_resumir(topico)} deve possuir exatamente 3 níveis no formato "
                 f"'{PREFIXO_TOPICO}/<id_maquina>/<metrica>' (encontrados {len(partes)} níveis)."
             ),
         )
@@ -148,14 +179,14 @@ def validar_topico(topico: Any) -> ResultadoValidacao:
     if prefixo != PREFIXO_TOPICO:
         return ResultadoValidacao(
             valido=False,
-            erro=f"Prefixo de tópico inválido: esperado '{PREFIXO_TOPICO}', recebido '{prefixo}'.",
+            erro=f"Prefixo de tópico inválido: esperado '{PREFIXO_TOPICO}', recebido {_resumir(prefixo)}.",
         )
 
     resultado_id = validar_id_maquina(id_maquina)
     if not resultado_id.valido:
         return ResultadoValidacao(
             valido=False,
-            erro=f"Tópico '{topico}' possui id_maquina inválido: {resultado_id.erro}",
+            erro=f"Tópico {_resumir(topico)} possui id_maquina inválido: {resultado_id.erro}",
         )
 
     if metrica not in METRICAS_SUPORTADAS:
@@ -163,7 +194,7 @@ def validar_topico(topico: Any) -> ResultadoValidacao:
         return ResultadoValidacao(
             valido=False,
             erro=(
-                f"Métrica '{metrica}' não suportada no tópico '{topico}'. "
+                f"Métrica {_resumir(metrica)} não suportada no tópico {_resumir(topico)}. "
                 f"Valores aceitos: {metricas_ordenadas}."
             ),
         )
@@ -197,45 +228,51 @@ def validar_timestamp(timestamp: Any) -> ResultadoValidacao:
             erro="O campo 'timestamp' deve ser uma string não vazia no padrão ISO 8601.",
         )
 
-    if timestamp != timestamp.strip():
-        return ResultadoValidacao(
-            valido=False,
-            erro="O campo 'timestamp' não pode conter espaços no início ou no fim.",
-        )
-
-    # Garante que contém separador de hora ('T' ou 't'), rejeitando strings só com data
-    if "T" not in timestamp.upper():
+    correspondencia = REGEX_TIMESTAMP.fullmatch(timestamp)
+    if correspondencia is None:
         return ResultadoValidacao(
             valido=False,
             erro=(
-                f"Timestamp '{timestamp}' inválido: deve incluir data e hora "
-                "separados por 'T' (ex.: '2026-11-16T22:00:00-03:00')."
+                f"Timestamp {_resumir(timestamp)} não está no formato ISO 8601 esperado "
+                "'AAAA-MM-DDTHH:MM:SS[.ffffff]' seguido do fuso ('Z' ou '±HH:MM'), "
+                "ex.: '2026-11-16T22:00:00-03:00'."
             ),
         )
 
-    # Normaliza o sufixo UTC 'Z'/'z' para '+00:00' para manter compatibilidade tanto com Python 3.9/3.10 quanto com Python 3.11+
-    timestamp_normalizado = (
-        f"{timestamp[:-1]}+00:00" if timestamp[-1] in ("Z", "z") else timestamp
-    )
+    partes = correspondencia.groupdict()
+    fuso_texto = partes["fuso"]
+    deslocamento = timedelta(0)
+    if fuso_texto != "Z":
+        horas_fuso, minutos_fuso = int(fuso_texto[1:3]), int(fuso_texto[4:6])
+        deslocamento = timedelta(hours=horas_fuso, minutes=minutos_fuso)
+        if fuso_texto[0] == "-":
+            deslocamento = -deslocamento
+        if minutos_fuso > 59 or abs(deslocamento) > DESLOCAMENTO_FUSO_MAXIMO:
+            return ResultadoValidacao(
+                valido=False,
+                erro=(
+                    f"Timestamp {_resumir(timestamp)} possui fuso horário inválido: "
+                    "o deslocamento deve estar entre -14:00 e +14:00."
+                ),
+            )
 
     try:
-        dt = datetime.fromisoformat(timestamp_normalizado)
+        dt = datetime(
+            int(partes["ano"]),
+            int(partes["mes"]),
+            int(partes["dia"]),
+            int(partes["hora"]),
+            int(partes["minuto"]),
+            int(partes["segundo"]),
+            int((partes["fracao"] or "0").ljust(6, "0")),
+            tzinfo=timezone(deslocamento),
+        )
     except ValueError:
         return ResultadoValidacao(
             valido=False,
             erro=(
-                f"Timestamp '{timestamp}' não está no formato ISO 8601 válido "
-                "(ex.: '2026-11-16T22:00:00-03:00')."
-            ),
-        )
-
-    # Exige objeto timezone-aware (offset explícito)
-    if dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None:
-        return ResultadoValidacao(
-            valido=False,
-            erro=(
-                f"Timestamp '{timestamp}' deve informar o fuso horário "
-                "(ex.: '-03:00' ou 'Z')."
+                f"Timestamp {_resumir(timestamp)} contém data ou hora inexistente "
+                "(verifique dia, mês, hora, minuto e segundo)."
             ),
         )
 
@@ -285,7 +322,7 @@ def _validar_estrutura_base_payload(payload: Any, metrica: str) -> ResultadoVali
             valido=False,
             erro=(
                 f"Campo 'valor' deve ser numérico finito (int ou float), "
-                f"mas recebeu {type(valor).__name__} ({valor!r})."
+                f"mas recebeu {type(valor).__name__} ({_resumir(valor)})."
             ),
         )
 
@@ -296,7 +333,7 @@ def _validar_estrutura_base_payload(payload: Any, metrica: str) -> ResultadoVali
             valido=False,
             erro=(
                 f"Unidade inválida para a métrica '{metrica}': "
-                f"esperado '{unidade_esperada}', recebido {unidade!r}."
+                f"esperado '{unidade_esperada}', recebido {_resumir(unidade)}."
             ),
         )
 
@@ -366,7 +403,7 @@ def validar_payload_cpu(payload: Any) -> ResultadoValidacao:
                         valido=False,
                         erro=(
                             f"Elemento 'detalhes.por_nucleo[{indice}]' deve ser numérico, "
-                            f"mas recebeu {type(uso_nucleo).__name__} ({uso_nucleo!r})."
+                            f"mas recebeu {type(uso_nucleo).__name__} ({_resumir(uso_nucleo)})."
                         ),
                     )
                 if not (0.0 <= float(uso_nucleo) <= 100.0):
@@ -377,6 +414,17 @@ def validar_payload_cpu(payload: Any) -> ResultadoValidacao:
                             "fora da faixa válida [0.0, 100.0]."
                         ),
                     )
+
+            media_nucleos = sum(float(uso) for uso in por_nucleo) / len(por_nucleo)
+            if abs(media_nucleos - valor_cpu) > TOLERANCIA_PERCENTUAL:
+                return ResultadoValidacao(
+                    valido=False,
+                    erro=(
+                        f"Inconsistência na CPU: 'valor' ({valor_cpu}%) difere da média de "
+                        f"'detalhes.por_nucleo' ({media_nucleos:.1f}%) em mais de "
+                        f"{TOLERANCIA_PERCENTUAL} ponto percentual."
+                    ),
+                )
 
     return ResultadoValidacao(
         valido=True,
@@ -430,7 +478,7 @@ def validar_payload_memoria(payload: Any) -> ResultadoValidacao:
             if not _eh_numero_valido(total_bruto) or float(total_bruto) <= 0.0:
                 return ResultadoValidacao(
                     valido=False,
-                    erro=f"Campo 'detalhes.total' deve ser um número maior que zero (recebido {total_bruto!r}).",
+                    erro=f"Campo 'detalhes.total' deve ser um número maior que zero (recebido {_resumir(total_bruto)}).",
                 )
             total_mb = float(total_bruto)
             if valor_usado > total_mb:
@@ -447,7 +495,7 @@ def validar_payload_memoria(payload: Any) -> ResultadoValidacao:
             if not _eh_numero_valido(livre_bruto) or float(livre_bruto) < 0.0:
                 return ResultadoValidacao(
                     valido=False,
-                    erro=f"Campo 'detalhes.livre' deve ser um número >= 0 (recebido {livre_bruto!r}).",
+                    erro=f"Campo 'detalhes.livre' deve ser um número >= 0 (recebido {_resumir(livre_bruto)}).",
                 )
             livre_mb = float(livre_bruto)
 
@@ -477,9 +525,20 @@ def validar_payload_memoria(payload: Any) -> ResultadoValidacao:
                     valido=False,
                     erro=(
                         "Campo 'detalhes.percentual' deve ser um número entre 0.0 e 100.0 "
-                        f"(recebido {perc_bruto!r})."
+                        f"(recebido {_resumir(perc_bruto)})."
                     ),
                 )
+
+            if total_mb is not None:
+                percentual_calculado = valor_usado / total_mb * 100.0
+                if abs(percentual_calculado - float(perc_bruto)) > TOLERANCIA_PERCENTUAL:
+                    return ResultadoValidacao(
+                        valido=False,
+                        erro=(
+                            f"Inconsistência na memória RAM: 'detalhes.percentual' ({perc_bruto}%) "
+                            f"não corresponde a 'valor'/'detalhes.total' ({percentual_calculado:.1f}%)."
+                        ),
+                    )
 
     return ResultadoValidacao(
         valido=True,
@@ -513,6 +572,25 @@ def validar_mensagem_mqtt(
     id_maquina = resultado_topico.dados["id_maquina"]
     metrica = resultado_topico.dados["metrica"]
 
+    if isinstance(payload_bruto, (bytearray, memoryview)):
+        payload_bruto = bytes(payload_bruto)
+
+    if isinstance(payload_bruto, str):
+        tamanho_bytes = len(payload_bruto.encode("utf-8", errors="surrogatepass"))
+    elif isinstance(payload_bruto, bytes):
+        tamanho_bytes = len(payload_bruto)
+    else:
+        tamanho_bytes = 0
+
+    if tamanho_bytes > TAMANHO_MAXIMO_PAYLOAD_BYTES:
+        erro = (
+            f"Payload excede o tamanho máximo de {TAMANHO_MAXIMO_PAYLOAD_BYTES} bytes "
+            f"(recebidos {tamanho_bytes} bytes)."
+        )
+        if lancar_excecao:
+            raise ErroValidacaoProtocolo(erro)
+        return ResultadoValidacao(valido=False, erro=erro)
+
     # Decodificação UTF-8 (quando recebido como bytes do Paho MQTT)
     if isinstance(payload_bruto, bytes):
         try:
@@ -541,9 +619,15 @@ def validar_mensagem_mqtt(
             payload_dict = json.loads(
                 texto_json,
                 parse_constant=_rejeitar_constante_json,
+                object_pairs_hook=_rejeitar_chaves_duplicadas,
             )
         except (json.JSONDecodeError, ValueError) as exc:
             erro = f"JSON malformado ou inválido: {exc}."
+            if lancar_excecao:
+                raise ErroValidacaoProtocolo(erro) from exc
+            return ResultadoValidacao(valido=False, erro=erro)
+        except RecursionError as exc:
+            erro = "JSON malformado ou inválido: estrutura aninhada em profundidade excessiva."
             if lancar_excecao:
                 raise ErroValidacaoProtocolo(erro) from exc
             return ResultadoValidacao(valido=False, erro=erro)
