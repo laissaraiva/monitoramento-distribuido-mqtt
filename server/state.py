@@ -146,13 +146,16 @@ class EstadoCentral:
             maquina.ultima_atualizacao = recebido_em
 
             # grava o ponto no histórico dentro da mesma trava, então a última leitura e o histórico nunca ficam inconsistentes entre si pra quem lê
-            serie = self._historico.get((id_maquina, metrica))
-            if serie is None:
-                serie = deque(maxlen=self._historico_maximo)
-                self._historico[(id_maquina, metrica)] = serie
-            serie.append(
-                {"t": recebido_em.isoformat(timespec="seconds"), "valor": percentual}
-            )
+            # Sem percentual (memória no formato mínimo, sem detalhes) não há o que plotar: o ponto não é gravado,
+            # pra o gráfico nunca receber "valor": null (o contrato da API promete número)
+            if percentual is not None:
+                serie = self._historico.get((id_maquina, metrica))
+                if serie is None:
+                    serie = deque(maxlen=self._historico_maximo)
+                    self._historico[(id_maquina, metrica)] = serie
+                serie.append(
+                    {"t": recebido_em.isoformat(timespec="seconds"), "valor": percentual}
+                )
 
             copia = copy.deepcopy(maquina)
             total = len(self._maquinas)
@@ -234,6 +237,65 @@ class EstadoCentral:
             "cpu": como_dict(maquina.metricas.get("cpu")),
             "memoria": como_dict(maquina.metricas.get("memoria")),
             "ultima_atualizacao": maquina.ultima_atualizacao,
+        }
+
+    # dashboard: histórico e disponibilidade
+
+    @property
+    def timeout_agente(self) -> float:
+        # Segundos sem dados a partir dos quais uma máquina é considerada indisponível (o dashboard mostra esse valor como "limite X s")
+        return self._timeout_agente
+
+    # Histórico de todas as máquinas, do ponto mais antigo ao mais novo
+    # Formato: { "maquina01": {"cpu": [{"t": "<ISO>", "valor": 12.5}, ...], "memoria": [...]}, ... }
+    # Toda máquina conhecida traz as duas chaves, com lista vazia se a métrica ainda não tem pontos
+    # Devolve cópias, então quem chamar pode mexer no retorno sem afetar o estado
+    def historico_todas(self) -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
+        with self._lock:
+            return {
+                id_maquina: {
+                    metrica: [
+                        dict(ponto)
+                        for ponto in self._historico.get((id_maquina, metrica), ())
+                    ]
+                    for metrica in ("cpu", "memoria")
+                }
+                for id_maquina in sorted(self._maquinas)
+            }
+
+    # Retrato pro dashboard, no formato do campo "maquinas" de GET /api/estado
+    
+    # O status é calculado na hora da chamada: indisponivel se agora - ultima_atualizacao > timeout_agente, senão online
+    # Não precisa de thread nem callback e quando chega leitura nova a máquina volta a online sozinha
+    def snapshot_dashboard(self, agora: Optional[datetime] = None) -> List[Dict[str, Any]]:
+        agora = agora or datetime.now().astimezone()
+        with self._lock:
+            return [
+                self._linha_dashboard(self._maquinas[i], agora)
+                for i in sorted(self._maquinas)
+            ]
+
+    # Monta o item do dashboard de uma máquina. Só é chamada de dentro do snapshot_dashboard, com a trava já adquirida
+    def _linha_dashboard(self, maquina: EstadoMaquina, agora: datetime) -> Dict[str, Any]:
+        sem_dados = max(0.0, (agora - maquina.ultima_atualizacao).total_seconds()) # max(0, ...) evita valor negativo se o relógio do servidor andar pra trás
+        cpu = maquina.metricas.get("cpu")
+        memoria = maquina.metricas.get("memoria")
+        return {
+            "id_maquina": maquina.id_maquina,
+            "status": "indisponivel" if sem_dados > self._timeout_agente else "online", # exatamente no limite ainda é online, só passa de indisponível acima dele
+            "segundos_sem_dados": int(sem_dados),
+            "cpu": {"valor": cpu.valor} if cpu is not None else None,
+            "memoria": (
+                {
+                    "valor": memoria.valor,
+                    "unidade": memoria.unidade,
+                    "percentual": self._percentual_para_historico( # mesmo cálculo do histórico (detalhes["percentual"]), None se a leitura não trouxe detalhes
+                        "memoria", {"detalhes": memoria.detalhes}
+                    ),
+                }
+                if memoria is not None
+                else None
+            ),
         }
 
     def total_maquinas(self) -> int:
