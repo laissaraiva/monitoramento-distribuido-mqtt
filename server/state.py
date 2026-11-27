@@ -8,9 +8,10 @@
 import copy
 import logging
 import threading
+from collections import deque
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Deque, Dict, List, Optional, Tuple
 
 from common.validation import (
     CAMPOS_OBRIGATORIOS_PAYLOAD,
@@ -19,6 +20,13 @@ from common.validation import (
 )
 
 logger = logging.getLogger("monitor.estado")
+
+# constantes do dashboard
+# Tempo (s) sem receber leitura de uma máquina até ela ser considerada indisponível
+TIMEOUT_AGENTE_PADRAO: float = 15.0 # 15 s = 3x o intervalo padrão de publicação do agente (5 s)
+
+# Quantidade máxima de pontos guardados por máquina e métrica (120 pontos a 5 s = ~10 min)
+HISTORICO_MAXIMO: int = 120
 
 @dataclass
 class MetricaRecebida:
@@ -49,9 +57,40 @@ class EstadoMaquina:
 class EstadoCentral:
     # Último estado conhecido de cada máquina, indexado por id_maquina
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        timeout_agente: float = TIMEOUT_AGENTE_PADRAO,
+        historico_maximo: int = HISTORICO_MAXIMO,
+    ) -> None:
+        # os dois parâmetros têm padrão, então EstadoCentral() continua valendo pros testes e pro monitor atuais
+        if (
+            isinstance(timeout_agente, bool)
+            or not isinstance(timeout_agente, (int, float))
+            or not (timeout_agente > 0)
+        ):
+            raise ValueError(
+                f"O timeout de indisponibilidade deve ser um número maior que zero, mas recebeu {timeout_agente!r}."
+            )
+        if (
+            isinstance(historico_maximo, bool)
+            or not isinstance(historico_maximo, int)
+            or historico_maximo < 1
+        ):
+            raise ValueError(
+                f"O tamanho máximo do histórico deve ser um inteiro maior ou igual a 1, mas recebeu {historico_maximo!r}."
+            )
+
         self._maquinas: Dict[str, EstadoMaquina] = {}
         self._lock = threading.RLock()
+
+        # usado pra decidir se uma máquina está indisponível (calculado ao montar o dashboard)
+        self._timeout_agente: float = float(timeout_agente)
+        self._historico_maximo: int = historico_maximo
+
+        # histórico de cada métrica por máquina, indexado por (id_maquina, metrica)
+        # Cada deque guarda no máximo historico_maximo pontos: {"t": ISO 8601, "valor": percentual}
+        # Quando enche, o ponto mais antigo sai sozinho
+        self._historico: Dict[Tuple[str, str], Deque[Dict[str, Any]]] = {}
 
     def atualizar(
         self,
@@ -83,6 +122,9 @@ class EstadoCentral:
         # Hora de recebimento no monitor (não depende do relógio do agente)
         recebido_em = recebido_em or datetime.now().astimezone()
 
+        # valor em % de uso que vai pro gráfico de evolução (ainda sem a trava)
+        percentual = self._percentual_para_historico(metrica, payload)
+
         leitura = MetricaRecebida(
             valor=payload["valor"],
             unidade=payload["unidade"],
@@ -103,6 +145,15 @@ class EstadoCentral:
             maquina.metricas[metrica] = leitura
             maquina.ultima_atualizacao = recebido_em
 
+            # grava o ponto no histórico dentro da mesma trava, então a última leitura e o histórico nunca ficam inconsistentes entre si pra quem lê
+            serie = self._historico.get((id_maquina, metrica))
+            if serie is None:
+                serie = deque(maxlen=self._historico_maximo)
+                self._historico[(id_maquina, metrica)] = serie
+            serie.append(
+                {"t": recebido_em.isoformat(timespec="seconds"), "valor": percentual}
+            )
+
             copia = copy.deepcopy(maquina)
             total = len(self._maquinas)
 
@@ -120,6 +171,21 @@ class EstadoCentral:
             leitura.timestamp, recebido_em.isoformat(timespec="seconds"),
         )
         return copia
+
+    @staticmethod
+    def _percentual_para_historico(metrica: str, payload: Dict[str, Any]) -> Optional[float]:
+        # devolve o valor em % de uso pro gráfico (os dois gráficos usam a mesma escala 0-100)
+        # - cpu: o próprio valor já é percentual
+        # - memoria: o valor é MB usados; o percentual vem em detalhes["percentual"]
+        # Se a memória veio no formato mínimo (sem detalhes), o percentual é desconhecido e vira None
+        if metrica == "cpu":
+            return payload["valor"]
+        detalhes = payload.get("detalhes")
+        if isinstance(detalhes, dict):
+            percentual = detalhes.get("percentual")
+            if isinstance(percentual, (int, float)) and not isinstance(percentual, bool):
+                return percentual
+        return None
 
     def obter(self, id_maquina: str) -> Optional[EstadoMaquina]:
         #Cópia do estado de uma máquina, ou None se ela é desconhecida
@@ -174,3 +240,4 @@ class EstadoCentral:
         #Quantidade de máquinas conhecidas
         with self._lock:
             return len(self._maquinas)
+        
