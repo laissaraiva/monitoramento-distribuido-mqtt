@@ -3,6 +3,7 @@ import logging
 import os
 import signal
 import sys
+import threading
 import time
 from collections import deque
 from datetime import datetime
@@ -10,6 +11,7 @@ from typing import Any, Deque, Dict, List, Optional
 
 import paho.mqtt.client as mqtt
 
+from common.filtros import validar_filtro_assinatura
 from common.validation import PREFIXO_TOPICO, validar_mensagem_mqtt
 from server.state import EstadoCentral, MetricaRecebida
 
@@ -137,6 +139,31 @@ def _descrever_codigo(codigo: Any) -> str:
     return str(codigo)
 
 
+def _validar_host(host: Any) -> str:
+    if not isinstance(host, str) or not host.strip():
+        raise ValueError("O endereço do broker não pode ficar vazio.")
+    host = host.strip()
+    if len(host) > 253:
+        raise ValueError("O endereço do broker é longo demais (máximo de 253 caracteres).")
+    if any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in host):
+        raise ValueError("O endereço do broker não pode conter espaços.")
+    return host
+
+
+def _validar_porta(porta: Any) -> int:
+    # Mesma regra de _porta_valida (inteiro de 1 a 65535), mas com mensagens para a tela
+    # e aceitando o número que vem do JSON; "1883" também vale, para o campo de texto.
+    if isinstance(porta, bool) or not isinstance(porta, (int, str)):
+        raise ValueError(f"A porta deve ser um número inteiro, mas recebeu {porta!r}.")
+    texto = str(porta).strip()
+    if not (texto.isascii() and texto.isdigit()):
+        raise ValueError(f"A porta deve ser um número inteiro, mas recebeu '{porta}'.")
+    valor = int(texto)
+    if not 1 <= valor <= 65535:
+        raise ValueError("A porta deve estar entre 1 e 65535.")
+    return valor
+
+
 class MonitorCentral:
     def __init__(
         self,
@@ -160,8 +187,23 @@ class MonitorCentral:
         self.mensagens_descartadas = 0
         self.conectado = False
 
+        # Motivo da última falha de conexão com o broker (None = sem erro).
+        # O dashboard mostra este texto na faixa de "broker fora".
+        self.erro_conexao: Optional[str] = None
+
         self._executando = False
         self._cliente = self._criar_cliente()
+
+        # O dashboard (Flask, várias threads) chama alterar_filtro/reconectar enquanto o
+        # paho roda a própria thread. Duas travas, com papéis separados:
+        # - _trava_filtro protege self.filtro + a assinatura. É usada também dentro de
+        #   _ao_conectar (thread do paho), então só pode cobrir chamadas que não esperam
+        #   pela thread do paho.
+        # - _trava_ciclo serializa iniciar/encerrar/reconectar. loop_stop() espera a thread
+        #   do paho terminar, então esta trava NUNCA pode ser pedida dentro de um callback.
+        self._trava_filtro = threading.RLock()
+        self._trava_ciclo = threading.RLock()
+        self._cliente_ativo = False
 
     def _criar_cliente(self) -> mqtt.Client:
         id_cliente = "monitor-central"
@@ -177,6 +219,9 @@ class MonitorCentral:
         cliente.on_connect = self._ao_conectar
         cliente.on_disconnect = self._ao_desconectar
         cliente.on_message = self._ao_receber
+        # Chamado a cada tentativa de conexão que nem chega ao broker (broker fora, host
+        # inexistente, rede fora). Sem ele o monitor ficaria mudo com o broker desligado.
+        cliente.on_connect_fail = self._ao_falhar_conexao
 
         cliente.reconnect_delay_set(min_delay=1, max_delay=30)
         return cliente
@@ -184,26 +229,39 @@ class MonitorCentral:
     def _ao_conectar(self, cliente, userdata, flags, codigo, *_args) -> None:
         if _codigo_indica_falha(codigo):
             self.conectado = False
-            logger.error("Broker recusou a conexão: %s", _descrever_codigo(codigo))
+            self.erro_conexao = _descrever_codigo(codigo)
+            logger.error("Broker recusou a conexão: %s", self.erro_conexao)
             return
-        self.conectado = True
+        self.erro_conexao = None
         logger.info("Conectado ao broker %s:%d", self.host, self.porta)
 
-        # Assinar aqui garante a reassinatura depois de uma reconexão
-        resultado, _ = cliente.subscribe(self.filtro, qos=QOS)
+        # Assinar aqui garante a reassinatura depois de uma reconexão. A trava impede que
+        # alterar_filtro troque o filtro entre ler self.filtro e assinar.
+        with self._trava_filtro:
+            self.conectado = True
+            filtro = self.filtro
+            resultado, _ = cliente.subscribe(filtro, qos=QOS)
         if resultado != mqtt.MQTT_ERR_SUCCESS:
-            logger.error("Falha ao assinar '%s': %s", self.filtro, mqtt.error_string(resultado))
+            logger.error("Falha ao assinar '%s': %s", filtro, mqtt.error_string(resultado))
             return
-        logger.info("Assinatura ativa: %s (QoS %d)", self.filtro, QOS)
+        logger.info("Assinatura ativa: %s (QoS %d)", filtro, QOS)
+
+    def _ao_falhar_conexao(self, cliente, userdata, *_args) -> None:
+        self.conectado = False
+        erro = f"Não foi possível conectar a {self.host}:{self.porta}"
+        # O paho repete a tentativa a cada 1-30 s; só registra quando o motivo muda,
+        # senão o painel de eventos (50 linhas) seria tomado pela mesma frase.
+        if erro != self.erro_conexao:
+            self.erro_conexao = erro
+            logger.warning("%s. Tentando novamente...", erro)
 
     def _ao_desconectar(self, cliente, userdata, *args) -> None:
         codigo = args[1] if len(args) >= 2 else (args[0] if args else 0)
         self.conectado = False
         if self._executando and _codigo_indica_falha(codigo):
-            logger.warning(
-                "Conexão com o broker perdida (%s). Tentando reconectar...",
-                _descrever_codigo(codigo),
-            )
+            motivo = _descrever_codigo(codigo)
+            self.erro_conexao = f"Conexão com o broker perdida ({motivo})"
+            logger.warning("Conexão com o broker perdida (%s). Tentando reconectar...", motivo)
         else:
             logger.info("Desconectado do broker.")
 
@@ -228,6 +286,107 @@ class MonitorCentral:
             return
 
         logger_mensagens.info("%s", formatar_metrica(id_maquina, metrica, maquina.metricas[metrica]))
+
+    # --- Uso sem terminal (dashboard web) ---
+
+    def iniciar_em_segundo_plano(self) -> None:
+        # Como iniciar(), mas volta logo: sem laço e sem tabela. Quem chama (o dashboard)
+        # cuida do próprio laço e chama encerrar() no fim. Chamar de novo não faz nada.
+        with self._trava_ciclo:
+            if self._cliente_ativo:
+                return
+            self._executando = True
+            self._cliente_ativo = True
+            logger.info("Monitor iniciado em segundo plano | broker %s:%d", self.host, self.porta)
+            self._cliente.connect_async(self.host, self.porta, keepalive=self.keepalive)
+            self._cliente.loop_start()
+
+    def encerrar(self) -> None:
+        # Para o monitor iniciado em segundo plano. Pode ser chamado várias vezes.
+        with self._trava_ciclo:
+            if not self._cliente_ativo:
+                return
+            self._cliente_ativo = False
+            self._executando = False  # a desconexão a seguir é intencional, não uma queda
+            self._cliente.disconnect()
+            self._cliente.loop_stop()
+            self.conectado = False
+            logger.info("Monitor finalizado.")
+
+    def estado_broker(self) -> Dict[str, Any]:
+        return {
+            "conectado": self.conectado,
+            "host": self.host,
+            "porta": self.porta,
+            "erro": self.erro_conexao,
+        }
+
+    def contadores(self) -> Dict[str, int]:
+        return {
+            "recebidas": self.mensagens_recebidas,
+            "descartadas": self.mensagens_descartadas,
+        }
+
+    def eventos_recentes(self, n: int = 30) -> List[str]:
+        # Do mais antigo ao mais novo (a ordem em que aconteceram)
+        return self.eventos.recentes(n) if self.eventos else []
+
+    def alterar_filtro(self, novo: str) -> None:
+        # Troca o filtro de assinatura em execução. Levanta ValueError (texto em português,
+        # pronto para a tela) se o filtro for inválido ou o broker não aceitar a troca; nesse
+        # caso a assinatura anterior continua valendo.
+        validacao = validar_filtro_assinatura(novo)
+        if not validacao.valido:
+            raise ValueError(validacao.erro)
+
+        with self._trava_filtro:
+            antigo = self.filtro
+            if novo == antigo:
+                return
+
+            if self.conectado:
+                # MQTT_ERR_NO_CONN = a conexão caiu agora há pouco: trata como desconectado
+                # (o filtro novo é assinado na reconexão por _ao_conectar)
+                resultado, _ = self._cliente.unsubscribe(antigo)
+                if resultado not in (mqtt.MQTT_ERR_SUCCESS, mqtt.MQTT_ERR_NO_CONN):
+                    raise ValueError(
+                        f"Não foi possível cancelar a assinatura '{antigo}': "
+                        f"{mqtt.error_string(resultado)}. O filtro não foi alterado."
+                    )
+                resultado, _ = self._cliente.subscribe(novo, qos=QOS)
+                if resultado not in (mqtt.MQTT_ERR_SUCCESS, mqtt.MQTT_ERR_NO_CONN):
+                    # Devolve a assinatura anterior para não deixar o monitor sem nenhuma
+                    self._cliente.subscribe(antigo, qos=QOS)
+                    raise ValueError(
+                        f"Não foi possível assinar '{novo}': {mqtt.error_string(resultado)}. "
+                        f"O filtro continua '{antigo}'."
+                    )
+
+            # Desconectado: basta guardar; _ao_conectar assina este filtro ao reconectar
+            self.filtro = novo
+        logger.info("Filtro alterado de %s para %s", antigo, novo)
+
+    def reconectar(self, host: Any, porta: Any) -> None:
+        # Aponta o monitor para outro broker. Levanta ValueError (texto em português) se o
+        # host ou a porta forem inválidos, sem mexer na conexão atual.
+        host = _validar_host(host)
+        porta = _validar_porta(porta)
+
+        with self._trava_ciclo:
+            # Primeiro para a thread de rede e só então troca o destino, para nenhum
+            # callback ver um host novo com a conexão antiga
+            self._cliente.loop_stop()
+            self._cliente.disconnect()
+            self.host = host
+            self.porta = porta
+            self.conectado = False
+            self.erro_conexao = None
+            self._executando = True
+            self._cliente_ativo = True
+            self._cliente.connect_async(host, porta, keepalive=self.keepalive)
+            self._cliente.loop_start()
+        # A assinatura é refeita em _ao_conectar, com o filtro atual
+        logger.info("Broker alterado para %s:%d", host, porta)
 
     def montar_tela(self, agora: Optional[datetime] = None) -> str:
         agora = agora or datetime.now().astimezone()
